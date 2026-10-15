@@ -96,10 +96,11 @@
     reset: resetFilters,
     queryError
   } = useRouteFilters({ workflowId: 0, triggerType: '', status: '', keyword: '', from: '', to: '' })
-  const timeRange = computed({
+  const timeRange = computed<[Date, Date] | null>({
     get: () => {
-      const dates = form.from && form.to ? [new Date(form.from), new Date(form.to)] : []
-      return dates.every((date) => Number.isFinite(date.getTime())) ? dates : []
+      if (!form.from || !form.to) return null
+      const dates: [Date, Date] = [new Date(form.from), new Date(form.to)]
+      return dates.every((date) => Number.isFinite(date.getTime())) ? dates : null
     },
     set: (value: Date[] | null) => {
       form.from = value?.[0]?.toISOString() || ''

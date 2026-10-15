@@ -78,7 +78,7 @@
           <ElTabPane label="概览" name="overview">
             <p class="plugin-purpose">{{
               pluginPurposes[selectedPlugin.id] ||
-              selectedPlugin.nodes[0]?.description ||
+              selectedPlugin.nodes[0]?.title ||
               '扩展工作流与业务页面。'
             }}</p>
             <dl class="plugin-overview">
