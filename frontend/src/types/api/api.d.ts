@@ -1,0 +1,355 @@
+/** 前端类型定义：api.d。 */
+/**
+ * API 接口类型定义模块
+ *
+ * 提供所有后端接口的类型定义
+ *
+ * ## 主要功能
+ *
+ * - 通用类型（分页参数、响应结构等）
+ * - 认证类型（登录、用户信息等）
+ * - 系统管理类型（用户、角色等）
+ * - 全局命名空间声明
+ *
+ * ## 使用场景
+ *
+ * - API 请求参数类型约束
+ * - API 响应数据类型定义
+ * - 接口文档类型同步
+ *
+ * ## 注意事项
+ *
+ * - 在 .vue 文件使用需要在 eslint.config.mjs 中配置 globals: { Api: 'readonly' }
+ * - 使用全局命名空间，无需导入即可使用
+ *
+ * ## 使用方式
+ *
+ * ```typescript
+ * const params: Api.Auth.LoginParams = {
+ *   username: 'coinsphere',
+ *   password: 'coinsphere',
+ *   keepLoggedIn: false
+ * }
+ * const response: Api.Auth.UserInfo = await fetchUserInfo()
+ * ```
+ *
+ * @module types/api/api
+ * @author Art Design Pro Team
+ */
+
+declare namespace Api {
+  /** 通用类型 */
+  namespace Common {
+    /** 分页参数 */
+    interface PaginationParams {
+      /** 当前页码 */
+      current: number
+      /** 每页条数 */
+      size: number
+      /** 总条数 */
+      total: number
+    }
+
+    /** API 游标分页参数 */
+    interface CursorParams {
+      cursor?: string
+      limit?: number
+    }
+
+    /** 通用搜索参数 */
+    type CommonSearchParams = CursorParams
+
+    /** 分页响应基础结构 */
+    interface PaginatedResponse<T = any> {
+      records: T[]
+      nextCursor: string
+      hasMore: boolean
+      total: number
+    }
+
+    /** 启用状态 */
+    type EnableStatus = '1' | '2'
+  }
+
+  /** 认证类型 */
+  namespace Auth {
+    /** 登录参数 */
+    interface LoginParams {
+      username: string
+      password: string
+      keepLoggedIn: boolean
+    }
+
+    /** 登录响应 */
+    interface LoginResponse {
+      accessToken: string
+    }
+
+    interface ReauthResponse {
+      reauthToken: string
+    }
+
+    /** 用户信息 */
+    interface UserInfo {
+      userId: number
+      username: string
+      email: string
+      avatar?: string
+      accessMode: 'guest' | 'authenticated'
+    }
+  }
+
+  /** 配置管理类型 */
+  namespace Config {
+    interface I18nTexts {
+      zh: string
+      en: string
+    }
+
+    interface MenuI18nDict {
+      zh: Record<string, string>
+      en: Record<string, string>
+    }
+
+    interface AiModelConfig {
+      id: number
+      displayName: string
+      baseUrl: string
+      modelName: string
+      apiKeyMasked: string
+      isEnabled: boolean
+      priority: number
+      timeoutMs: number
+      sessionCount: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface AiModelUpsertPayload {
+      displayName: string
+      baseUrl: string
+      modelName: string
+      apiKey?: string
+      isEnabled: boolean
+      priority: number
+      timeoutMs: number
+    }
+
+    interface DataSourceDefinitionItem {
+      code: string
+      label: string
+      description: string
+      configSchema: Record<string, any>
+      variableDefinitions: Array<{
+        key: string
+        label: string
+      }>
+    }
+
+    interface DataSourceItem {
+      id: number
+      definitionCode: string
+      definitionLabel: string
+      displayName: string
+      description: string
+      configValues: Record<string, any>
+      configSchema: Record<string, any>
+      variableDefinitions: Array<{
+        key: string
+        label: string
+      }>
+      isEnabled: boolean
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface DataSourceUpsertPayload {
+      definitionCode: string
+      displayName: string
+      description: string
+      configValues: Record<string, any>
+      isEnabled: boolean
+    }
+  }
+
+  namespace System {
+    interface InstalledPlugin {
+      menuIcon?: string
+      id: string
+      name: string
+      version: string
+      contributes: string[]
+      status: 'loaded' | 'unavailable'
+      installed: boolean
+      compiled: boolean
+      compiledVersion: string
+      loaded: boolean
+      reason: string
+      nodes: Array<{
+        type: string
+        title: string
+        version: string
+        kind: 'action' | 'trigger'
+        configSchema: Record<string, any>
+      }>
+      pages: Array<{
+        pageKey: string
+        title: string
+        kind: 'page' | 'resultPage'
+      }>
+    }
+
+    type I18nTexts = Api.Config.I18nTexts
+    type MenuI18nDict = Api.Config.MenuI18nDict
+
+    type SystemLogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+    interface SystemLogSearchParams extends Api.Common.CursorParams {
+      startTime?: string
+      endTime?: string
+      level?: SystemLogLevel
+      component?: string
+      requestId?: string
+      userId?: number
+      method?: string
+      route?: string
+      statusCode?: number
+      keyword?: string
+    }
+
+    interface SystemLogItem {
+      id: number
+      loggedAt: string
+      level: SystemLogLevel
+      component: string
+      message: string
+      requestId: string
+      userId?: number | null
+      userName?: string | null
+      method: string
+      route: string
+      statusCode?: number | null
+      durationMs?: number | null
+      details: Record<string, string | number | boolean>
+    }
+
+    type SystemLogList = Api.Common.PaginatedResponse<SystemLogItem>
+
+    interface SystemLogRuntimeStatus {
+      level: SystemLogLevel
+      retentionDays: number
+      queueDepth: number
+      queueCapacity: number
+      written: number
+      dropped: number
+      failed: number
+      startedAt: string
+      updatedAt: string
+      updatedBy?: number | null
+    }
+
+    interface SystemLogSettingsPayload {
+      level: SystemLogLevel
+      retentionDays: number
+    }
+
+    type OutboundProxyProtocol = 'http' | 'socks5'
+    type OutboundProxyCheckStatus = 'unchecked' | 'healthy' | 'failed'
+
+    interface OutboundProxyItem {
+      id: number
+      name: string
+      protocol: OutboundProxyProtocol
+      host: string
+      port: number
+      username: string
+      passwordConfigured: boolean
+      isEnabled: boolean
+      lastCheckStatus: OutboundProxyCheckStatus
+      lastCheckedAt: string
+      lastLatencyMs?: number | null
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface OutboundProxyUpsertPayload {
+      name: string
+      protocol: OutboundProxyProtocol
+      host: string
+      port: number
+      username: string
+      password?: string
+      clearPassword?: boolean
+      isEnabled: boolean
+    }
+
+    interface OutboundProxyValidationResult {
+      success: boolean
+      status: OutboundProxyCheckStatus
+      message: string
+      checkedAt: string
+      latencyMs?: number | null
+    }
+  }
+
+  namespace Notifications {
+    interface InAppNoticeItem {
+      id: number
+      workflowId: number
+      nodeInstanceId: string
+      title: string
+      message: string
+      isRead: boolean
+      readAt: string
+      deliveredAt: string
+      createdAt: string
+    }
+
+    interface InAppNoticePage {
+      records: InAppNoticeItem[]
+      nextCursor: string
+      total: number
+      hasMore: boolean
+      unreadCount: number
+    }
+  }
+
+  namespace Assistant {
+    type MessageRole = 'user' | 'assistant'
+
+    interface ModelOption {
+      id: number
+      displayName: string
+      modelName: string
+      priority: number
+    }
+
+    interface Session {
+      id: number
+      modelId: number
+      modelName: string
+      title: string
+      messageCount: number
+      latestPreview: string
+      createdAt: string
+      updatedAt: string
+      lastMessageAt: string
+    }
+
+    interface Message {
+      id: number
+      role: MessageRole
+      content: string
+      createdAt: string
+    }
+
+    interface SessionCreateRequest {
+      modelId: number
+      title?: string
+    }
+
+    interface StreamRequest {
+      text: string
+    }
+  }
+}

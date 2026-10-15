@@ -1,0 +1,82 @@
+// Package service 实现个人工作流内核服务。
+package service
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"coinsphere/backend/internal/config"
+	"coinsphere/backend/internal/security"
+	"coinsphere/backend/plugin/sdk"
+	"gorm.io/gorm"
+)
+
+var (
+	ErrPermission = sdk.ErrSession
+	ErrNotFound   = sdk.ErrNotFound
+	ErrConflict   = sdk.ErrConflict
+)
+
+type App struct {
+	DB           *gorm.DB
+	Cfg          *config.AppConfig
+	Hasher       *security.PasswordHasher
+	Tokens       *security.TokenManager
+	Cipher       *security.SecretCipher
+	Plugins      *sdk.Registry
+	ArtifactRoot string
+	SystemLogs   *SystemLogRuntime
+
+	authStateMu         sync.Mutex
+	reauthTokens        map[string]reauthTokenRecord
+	dummyHash           string
+	runClaimMu          sync.Mutex
+	runCancelMu         sync.Mutex
+	runCancels          map[int64]context.CancelFunc
+	workflowWatchMu     sync.RWMutex
+	workflowWatchers    map[int64]map[chan WorkflowRunUpdate]struct{}
+	notificationWatchMu sync.Mutex
+	notificationWatches map[int64]map[chan NotificationEvent]struct{}
+	runWG               sync.WaitGroup
+	triggerMu           sync.Mutex
+	triggerRuns         map[int64]workflowTriggerRun
+	triggerWG           sync.WaitGroup
+	runSlots            chan struct{}
+	streamSlots         chan struct{}
+	computeSlots        chan struct{}
+}
+
+func NewApp(gdb *gorm.DB, cfg *config.AppConfig, plugins *sdk.Registry) *App {
+	hasher := security.NewPasswordHasher(cfg.Auth.PasswordIterations)
+	cipher, _ := security.NewSecretCipher(cfg.Auth.SecretKey)
+	return &App{
+		DB:                  gdb,
+		Cfg:                 cfg,
+		Hasher:              hasher,
+		Tokens:              security.NewTokenManager(cfg.Auth.SecretKey, cfg.Auth.AccessTokenTTLMinutes),
+		Cipher:              cipher,
+		Plugins:             plugins,
+		dummyHash:           hasher.HashPassword(security.RandomToken()),
+		reauthTokens:        map[string]reauthTokenRecord{},
+		runCancels:          map[int64]context.CancelFunc{},
+		workflowWatchers:    map[int64]map[chan WorkflowRunUpdate]struct{}{},
+		notificationWatches: map[int64]map[chan NotificationEvent]struct{}{},
+		triggerRuns:         map[int64]workflowTriggerRun{},
+		runSlots:            make(chan struct{}, 16),
+		streamSlots:         make(chan struct{}, 4),
+		computeSlots:        make(chan struct{}, 1),
+	}
+}
+
+type M = map[string]any
+
+func fmtTimeV(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format("2006-01-02 15:04:05")
+}
+
+func bizErr(format string, args ...any) error { return fmt.Errorf(format, args...) }

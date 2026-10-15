@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Go backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: coinsphere_test
+          POSTGRES_PASSWORD: ci-only-synthetic
+          POSTGRES_DB: coinsphere_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U coinsphere_test" --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      COINSPHERE_TEST_DSN: postgres://coinsphere_test:ci-only-synthetic@localhost:5432/coinsphere_test?sslmode=disable
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Check module files
+        run: go mod tidy -diff
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          test -z "$unformatted" || { printf '%s\n' "$unformatted"; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Behavior and race checks
+        env:
+          COINSPHERE_TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+      - name: Release package behavior
+        working-directory: .
+        run: |
+          bash scripts/release/tests/build-proxy-test.sh
+          bash scripts/release/tests/artifact-scan-test.sh
+          bash scripts/release/tests/deploy-digest-test.sh
+          bash scripts/release/tests/prune-registry-test.sh
+
+  frontend:
+    name: Vue frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max-old-space-size=1792 --max-semi-space-size=8
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Compile ordinary business plugin through the frontend registry
+        run: |
+          mkdir -p src/plugins/installed/example_business/frontend
+          cp ../examples/plugins/business/frontend/* src/plugins/installed/example_business/frontend/
+          cp ../examples/plugins/business/registry.fixture.ts src/plugins/registry.generated.ts
+      - name: Lint
+        run: pnpm lint
+      - name: Type check and build
+        run: pnpm build
+      - name: Workflow model behavior
+        run: pnpm test:model
+      - name: Browser dependencies
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Critical user journeys
+        run: pnpm test:e2e

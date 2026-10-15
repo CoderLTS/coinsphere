@@ -1,0 +1,317 @@
+/** 状态管理模块：notification。 */
+import { defineStore } from 'pinia'
+import {
+  fetchInAppNoticeList,
+  fetchReadAllInAppNotice,
+  fetchReadInAppNotice,
+  type InAppNoticePage
+} from '@/api/notifications'
+import { useUserStore } from './user'
+
+type NotificationWsEnvelope = {
+  type: string
+  version: 1
+  sequence: number
+  occurredAt: string
+  data: Record<string, any>
+}
+
+export function decodeNotificationWsEnvelope(
+  value: unknown,
+  lastSequence: number
+): NotificationWsEnvelope | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  const envelope = value as Record<string, unknown>
+  const sequence = typeof envelope.sequence === 'number' ? envelope.sequence : Number.NaN
+  if (
+    envelope.version !== 1 ||
+    typeof envelope.type !== 'string' ||
+    envelope.type === '' ||
+    !Number.isSafeInteger(sequence) ||
+    sequence <= lastSequence ||
+    typeof envelope.occurredAt !== 'string' ||
+    !envelope.occurredAt.endsWith('Z') ||
+    !envelope.data ||
+    typeof envelope.data !== 'object' ||
+    Array.isArray(envelope.data)
+  ) {
+    return null
+  }
+  return { ...envelope, version: 1, sequence } as NotificationWsEnvelope
+}
+
+const NOTIFICATION_WS_PROTOCOL = 'coinsphere.notifications.v1'
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+function accessTokenExpiresAt(accessToken: string) {
+  try {
+    const payload = accessToken.split('.')[1]
+    const base64 = payload
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(payload.length / 4) * 4, '=')
+    const { exp } = JSON.parse(atob(base64)) as { exp?: unknown }
+    return typeof exp === 'number' && Number.isSafeInteger(exp) ? exp * 1000 : 0
+  } catch {
+    return 0
+  }
+}
+
+export function buildNotificationWsUrl(pageOrigin: string) {
+  const url = new URL('/api/v1/ws/notifications', pageOrigin)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('notification websocket requires an HTTP page origin')
+  }
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString()
+}
+
+export const useNotificationStore = defineStore('notificationStore', () => {
+  const records = ref<Api.Notifications.InAppNoticeItem[]>([])
+  const unreadCount = ref(0)
+  const size = ref(20)
+  const nextCursor = ref('')
+  const total = ref(0)
+  const hasMore = ref(false)
+  const loading = ref(false)
+  const connected = ref(false)
+  const latestIncomingNoticeId = ref<number | null>(null)
+
+  let socket: WebSocket | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let sessionExpiryTimer: ReturnType<typeof setTimeout> | null = null
+  let manualClose = false
+  let lastSequence = 0
+
+  const userStore = useUserStore()
+
+  const resetState = () => {
+    records.value = []
+    unreadCount.value = 0
+    nextCursor.value = ''
+    total.value = 0
+    hasMore.value = false
+    loading.value = false
+    latestIncomingNoticeId.value = null
+  }
+
+  const applyPage = (page: InAppNoticePage, append = false) => {
+    const normalizedRecords = page.records.map(normalizeNoticeRecord)
+    records.value = append ? [...records.value, ...normalizedRecords] : normalizedRecords
+    unreadCount.value = page.unreadCount
+    nextCursor.value = page.nextCursor
+    total.value = page.total
+    hasMore.value = page.hasMore
+  }
+
+  const loadNotices = async (options?: { append?: boolean }) => {
+    if (loading.value || userStore.accessMode !== 'authenticated') {
+      return
+    }
+    loading.value = true
+    try {
+      const page = await fetchInAppNoticeList({
+        cursor: options?.append ? nextCursor.value || undefined : undefined,
+        limit: size.value
+      })
+      applyPage(page, Boolean(options?.append))
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const markRead = async (deliveryId: number) => {
+    await fetchReadInAppNotice(deliveryId)
+    const record = records.value.find((item) => item.id === deliveryId)
+    if (record && !record.isRead) {
+      record.isRead = true
+      record.readAt = new Date().toISOString()
+      unreadCount.value = Math.max(unreadCount.value - 1, 0)
+    }
+  }
+
+  const markAllRead = async () => {
+    await fetchReadAllInAppNotice()
+    records.value = records.value.map((item) => ({
+      ...item,
+      isRead: true,
+      readAt: item.readAt || new Date().toISOString()
+    }))
+    unreadCount.value = 0
+  }
+
+  const handleWsMessage = (envelope: NotificationWsEnvelope) => {
+    if (envelope.type === 'notice.unread') {
+      const nextUnreadCount = envelope.data.unreadCount
+      if (
+        typeof nextUnreadCount === 'number' &&
+        Number.isSafeInteger(nextUnreadCount) &&
+        nextUnreadCount >= 0
+      ) {
+        unreadCount.value = nextUnreadCount
+      }
+      return
+    }
+    if (
+      envelope.type !== 'notice.created' ||
+      !envelope.data.record ||
+      typeof envelope.data.record !== 'object' ||
+      Array.isArray(envelope.data.record)
+    ) {
+      return
+    }
+    const record = envelope.data.record as Record<string, any>
+    const normalizedRecord = normalizeNoticeRecord(record)
+    if (!Number.isSafeInteger(normalizedRecord.id) || normalizedRecord.id <= 0) {
+      return
+    }
+    const existingIndex = records.value.findIndex((item) => item.id === normalizedRecord.id)
+    if (existingIndex >= 0) {
+      records.value.splice(existingIndex, 1, normalizedRecord)
+    } else {
+      records.value.unshift(normalizedRecord)
+      if (records.value.length > size.value) {
+        records.value = records.value.slice(0, size.value)
+      }
+      total.value += 1
+    }
+    const nextUnreadCount = envelope.data.unreadCount
+    unreadCount.value =
+      typeof nextUnreadCount === 'number' &&
+      Number.isSafeInteger(nextUnreadCount) &&
+      nextUnreadCount >= 0
+        ? nextUnreadCount
+        : unreadCount.value + 1
+    latestIncomingNoticeId.value = normalizedRecord.id
+  }
+
+  const scheduleReconnect = () => {
+    if (manualClose || userStore.accessMode !== 'authenticated') {
+      return
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+    }
+    reconnectTimer = setTimeout(() => {
+      connect()
+    }, 3000)
+  }
+
+  const connect = () => {
+    if (userStore.accessMode !== 'authenticated' || !userStore.accessToken) {
+      return
+    }
+    const accessToken = userStore.accessToken
+    const expiresAt = accessTokenExpiresAt(accessToken)
+    if (expiresAt <= Date.now()) {
+      userStore.clearSession()
+      return
+    }
+    if (sessionExpiryTimer) clearTimeout(sessionExpiryTimer)
+    sessionExpiryTimer = setTimeout(
+      () => {
+        if (userStore.accessToken === accessToken) connect()
+      },
+      Math.min(expiresAt - Date.now(), MAX_TIMEOUT_MS)
+    )
+    if (
+      socket &&
+      (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+    ) {
+      return
+    }
+    manualClose = false
+    lastSequence = 0
+    const currentSocket = new WebSocket(buildNotificationWsUrl(window.location.origin), [
+      NOTIFICATION_WS_PROTOCOL,
+      accessToken
+    ])
+    socket = currentSocket
+    currentSocket.onopen = () => {
+      if (socket !== currentSocket) return
+      if (currentSocket.protocol !== NOTIFICATION_WS_PROTOCOL) {
+        manualClose = true
+        currentSocket.close(1002, 'unexpected websocket protocol')
+        return
+      }
+      connected.value = true
+    }
+    currentSocket.onmessage = (event) => {
+      if (socket !== currentSocket) return
+      try {
+        const envelope = decodeNotificationWsEnvelope(JSON.parse(event.data), lastSequence)
+        if (!envelope) {
+          return
+        }
+        lastSequence = envelope.sequence
+        handleWsMessage(envelope)
+      } catch {
+        console.warn('Failed to parse notification websocket payload')
+      }
+    }
+    currentSocket.onclose = () => {
+      if (socket !== currentSocket) return
+      connected.value = false
+      socket = null
+      scheduleReconnect()
+    }
+    currentSocket.onerror = () => {
+      if (socket !== currentSocket) return
+      connected.value = false
+    }
+  }
+
+  const disconnect = () => {
+    manualClose = true
+    lastSequence = 0
+    connected.value = false
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    if (sessionExpiryTimer) {
+      clearTimeout(sessionExpiryTimer)
+      sessionExpiryTimer = null
+    }
+    if (socket) {
+      socket.close()
+      socket = null
+    }
+    resetState()
+  }
+
+  return {
+    records,
+    unreadCount,
+    size,
+    total,
+    hasMore,
+    loading,
+    connected,
+    latestIncomingNoticeId,
+    loadNotices,
+    markRead,
+    markAllRead,
+    connect,
+    disconnect,
+    resetState
+  }
+})
+
+function normalizeNoticeRecord(
+  raw: Api.Notifications.InAppNoticeItem | Record<string, any>
+): Api.Notifications.InAppNoticeItem {
+  return {
+    id: Number(raw.id),
+    workflowId: Number(raw.workflowId),
+    nodeInstanceId: String(raw.nodeInstanceId || ''),
+    title: String(raw.title || ''),
+    message: String(raw.message || ''),
+    isRead: Boolean(raw.isRead),
+    readAt: String(raw.readAt || ''),
+    deliveredAt: String(raw.deliveredAt || ''),
+    createdAt: String(raw.createdAt || '')
+  }
+}

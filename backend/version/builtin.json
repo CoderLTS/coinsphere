@@ -1,0 +1,91 @@
+[
+  {
+    "id": "official.ai",
+    "name": "人工智能",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "runPanels",
+      "pages",
+      "apiRoutes",
+      "headerActions"
+    ],
+    "requiresPlugins": {},
+    "menu": {
+      "mode": "own",
+      "title": "人工智能",
+      "icon": "ri:robot-2-line"
+    }
+  },
+  {
+    "id": "official.connector",
+    "name": "连接器",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "triggers",
+      "runPanels",
+      "ingress"
+    ],
+    "requiresPlugins": {}
+  },
+  {
+    "id": "official.notification",
+    "name": "通知",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "cleanup",
+      "workflowValidators"
+    ],
+    "requiresPlugins": {}
+  },
+  {
+    "id": "official.qq",
+    "name": "QQ机器人",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "triggers"
+    ],
+    "requiresPlugins": {
+      "official.notification": "^5.0.0"
+    }
+  },
+  {
+    "id": "official.quant",
+    "name": "量化",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "apiRoutes",
+      "runPanels",
+      "cleanup",
+      "assistantQueries",
+      "resultPages",
+      "workflowValidators",
+      "templates"
+    ],
+    "requiresPlugins": {}
+  },
+  {
+    "id": "official.binance",
+    "name": "Binance",
+    "version": "5.0.0",
+    "contributes": [
+      "nodes",
+      "triggers",
+      "apiRoutes",
+      "pages",
+      "resultPages",
+      "templates",
+      "cleanup"
+    ],
+    "requiresPlugins": {},
+    "menu": {
+      "mode": "own",
+      "title": "币安",
+      "icon": "ri:line-chart-line"
+    }
+  }
+]

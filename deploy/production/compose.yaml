@@ -1,0 +1,34 @@
+name: ${COINSPHERE_COMPOSE_PROJECT:?请设置独立 Compose 项目}
+
+services:
+  backend:
+    container_name: ${COINSPHERE_COMPOSE_PROJECT:?请设置独立 Compose 项目}
+    image: ${COINSPHERE_BACKEND_IMAGE:?请设置 COINSPHERE_BACKEND_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 40s
+    env_file:
+      - runtime.env
+    environment:
+      COINSPHERE_DATABASE__DSN: postgresql://${COINSPHERE_DATABASE_USER:?请设置数据库用户}:${COINSPHERE_DATABASE_PASSWORD:?请设置数据库密码}@postgresql:5432/${COINSPHERE_DATABASE_NAME:?请设置独立数据库}?sslmode=disable&options=-csearch_path%3Dpublic
+    volumes:
+      - ./data/backend:/app/volumes
+    ports:
+      - "${COINSPHERE_WEB_BIND:-127.0.0.1}:${COINSPHERE_WEB_PORT:-8081}:6987"
+    networks:
+      - default
+      - dpanel_stack
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:6987/health/ready >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+networks:
+  dpanel_stack:
+    external: true
+    name: dpanel_stack

@@ -1,0 +1,174 @@
+import {
+  fetchBinanceCandles,
+  fetchBinanceIndicators,
+  type BinanceIndicatorParams,
+  fetchBinanceInstruments,
+  type BinanceInstrument
+} from './api'
+
+export type MarketType = 'spot' | 'usd_m'
+export type MarketStatus = 'trading' | 'suspended' | 'all'
+export type CandleInterval =
+  | '1m'
+  | '3m'
+  | '5m'
+  | '15m'
+  | '30m'
+  | '1h'
+  | '2h'
+  | '4h'
+  | '6h'
+  | '8h'
+  | '12h'
+  | '1d'
+  | '3d'
+  | '1w'
+
+export interface MarketSymbol {
+  id: string
+  venue: 'binance'
+  market: MarketType
+  nativeSymbol: string
+  baseAsset: string
+  quoteAsset: string
+  status: 'trading' | 'suspended'
+  priceTick: string
+  quantityStep: string
+  minQuantity: string
+  minNotional: string
+  updatedAt: string
+}
+
+export interface MarketCandle {
+  instrumentId: string
+  interval: CandleInterval
+  openTime: string
+  closeTime: string
+  open: string
+  high: string
+  low: string
+  close: string
+  baseVolume: string
+  isClosed: boolean
+  indicators?: { main: Record<string, number | null>; sub: Record<string, number | null> }
+}
+
+export interface MarketSymbolQuery {
+  cursor?: string
+  limit?: number
+  market?: MarketType | ''
+  quoteAsset?: string
+  status?: MarketStatus
+  keyword?: string
+}
+
+export interface MarketCandleQuery {
+  cursor?: string
+  limit?: number
+  instrumentId: string
+  interval: CandleInterval
+  startTime?: string
+  endTime?: string
+  indicatorConfig?: BinanceIndicatorParams
+}
+
+const toMarketSymbol = (item: BinanceInstrument): MarketSymbol => ({
+  id: `${item.market}:${item.symbol}`,
+  venue: 'binance',
+  market: item.market === 'usdm' ? 'usd_m' : 'spot',
+  nativeSymbol: item.symbol,
+  baseAsset: item.baseAsset,
+  quoteAsset: item.quoteAsset,
+  status: item.status.toUpperCase() === 'TRADING' ? 'trading' : 'suspended',
+  priceTick: item.priceTick,
+  quantityStep: item.quantityStep,
+  minQuantity: item.minQuantity,
+  minNotional: '--',
+  updatedAt: item.updatedAt
+})
+
+export async function fetchMarketSymbols(params: MarketSymbolQuery) {
+  const markets = params.market ? [params.market] : (['spot', 'usd_m'] as MarketType[])
+  const results = await Promise.all(
+    markets.map((market) => fetchBinanceInstruments(market === 'usd_m' ? 'usdm' : 'spot'))
+  )
+  const keyword = String(params.keyword || '')
+    .trim()
+    .toUpperCase()
+  const records = results
+    .flatMap((result) => result.items)
+    .map(toMarketSymbol)
+    .filter((item) => !params.quoteAsset || item.quoteAsset === params.quoteAsset)
+    .filter((item) => !params.status || params.status === 'all' || item.status === params.status)
+    .filter(
+      (item) => !keyword || item.nativeSymbol.includes(keyword) || item.baseAsset.includes(keyword)
+    )
+  const offset = Math.max(0, Number(params.cursor || 0) || 0)
+  const limit = Math.max(1, params.limit || 100)
+  const page = records.slice(offset, offset + limit)
+  const next = offset + page.length
+  return {
+    records: page,
+    nextCursor: next < records.length ? String(next) : '',
+    hasMore: next < records.length,
+    total: records.length
+  }
+}
+
+export async function fetchMarketCandles(params: MarketCandleQuery) {
+  const [market, instrument] = params.instrumentId.split(':', 2)
+  const result = await fetchBinanceCandles({
+    market: market === 'usdm' || market === 'usd_m' ? 'usdm' : 'spot',
+    instrument,
+    interval: params.interval,
+    limit: params.limit,
+    before: params.endTime,
+    startTime: params.startTime,
+    endTime: params.endTime
+  })
+  const indicatorResult = await fetchBinanceIndicators({
+    market: market === 'usdm' || market === 'usd_m' ? 'usdm' : 'spot',
+    instrument,
+    interval: params.interval,
+    startTime: params.startTime,
+    endTime: params.endTime,
+    limit: params.limit,
+    indicatorConfig: params.indicatorConfig
+  })
+  const indicators = new Map(indicatorResult.items.map((item) => [item.openTime, item]))
+  const records: MarketCandle[] = result.items.map((item) => ({
+    instrumentId: params.instrumentId,
+    interval: item.interval as CandleInterval,
+    openTime: item.openTime,
+    closeTime: item.closeTime,
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close,
+    baseVolume: item.volume,
+    isClosed: true,
+    indicators: indicators.get(item.openTime)
+      ? {
+          main: Object.fromEntries(
+            Object.entries(indicators.get(item.openTime)!.main).map(([key, value]) => [
+              key,
+              value === null ? null : Number(value)
+            ])
+          ),
+          sub: Object.fromEntries(
+            Object.entries(indicators.get(item.openTime)!.sub).map(([key, value]) => [
+              key,
+              value === null ? null : Number(value)
+            ])
+          )
+        }
+      : undefined
+  }))
+  const nextBefore = result.nextBefore || ''
+  return {
+    records,
+    nextCursor: nextBefore,
+    hasMore: Boolean(result.hasMore),
+    total: records.length
+  }
+}

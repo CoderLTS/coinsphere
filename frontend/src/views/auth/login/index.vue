@@ -1,0 +1,243 @@
+<!-- 认证页面：index。 -->
+<template>
+  <div class="login-shell">
+    <LoginLeftView />
+
+    <div class="login-main">
+      <AuthTopBar />
+
+      <div class="auth-right-wrap">
+        <div class="form">
+          <div class="form-intro">
+            <p class="form-eyebrow">SECURE ACCESS / COINSPHERE</p>
+            <h3 class="title">{{ $t('login.title') }}</h3>
+            <p class="sub-title">{{ $t('login.subTitle') }}</p>
+          </div>
+          <ElForm
+            ref="formRef"
+            class="login-form"
+            :model="formData"
+            :rules="rules"
+            :key="formKey"
+            @keyup.enter="handleSubmit"
+          >
+            <ElFormItem prop="username" :label="$t('login.usernameLabel')">
+              <ElInput
+                class="custom-height"
+                :placeholder="$t('login.placeholder.username')"
+                v-model.trim="formData.username"
+                autocomplete="username"
+              >
+                <template #prefix><ArtSvgIcon icon="ri:user-3-line" /></template>
+              </ElInput>
+            </ElFormItem>
+            <ElFormItem prop="password" :label="$t('login.passwordLabel')">
+              <ElInput
+                class="custom-height"
+                :placeholder="$t('login.placeholder.password')"
+                v-model.trim="formData.password"
+                type="password"
+                autocomplete="current-password"
+                show-password
+              >
+                <template #prefix><ArtSvgIcon icon="ri:lock-2-line" /></template>
+              </ElInput>
+            </ElFormItem>
+
+            <!-- 推拽验证 -->
+            <div class="slider-wrap relative pb-5 mt-6">
+              <div
+                class="relative z-[2] overflow-hidden select-none rounded-lg border border-transparent tad-300"
+                :class="{ '!border-[#FF4E4F]': !isPassing && isClickPass }"
+              >
+                <ArtDragVerify
+                  ref="dragVerify"
+                  v-model:value="isPassing"
+                  :text="$t('login.sliderText')"
+                  textColor="var(--art-gray-700)"
+                  :successText="$t('login.sliderSuccessText')"
+                  progressBarBg="var(--main-color)"
+                  :background="isDark ? '#101217' : '#F4F7F5'"
+                  handlerBg="var(--default-box-color)"
+                />
+              </div>
+              <p
+                class="absolute top-0 z-[1] px-px mt-2 text-xs text-[#f56c6c] tad-300"
+                :class="{ 'translate-y-10': !isPassing && isClickPass }"
+              >
+                {{ $t('login.placeholder.slider') }}
+              </p>
+            </div>
+
+            <div class="form-options">
+              <ElCheckbox v-model="formData.keepLoggedIn">{{ $t('login.rememberPwd') }}</ElCheckbox>
+              <span class="session-note"
+                ><ArtSvgIcon icon="ri:shield-check-line" /> {{ $t('login.sessionNote') }}</span
+              >
+            </div>
+
+            <div class="submit-wrap">
+              <ElButton
+                class="w-full custom-height"
+                type="primary"
+                @click="handleSubmit"
+                :loading="loading"
+                v-ripple
+              >
+                {{ $t('login.btnText') }}
+                <ArtSvgIcon icon="ri:arrow-right-line" />
+              </ElButton>
+            </div>
+          </ElForm>
+          <p class="form-footnote">{{ $t('login.footnote') }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+  import { useUserStore } from '@/store/modules/user'
+  import { useI18n } from 'vue-i18n'
+  import { HttpError } from '@/utils/http/error'
+  import { fetchLogin } from '@/api/auth'
+  import { ElNotification, type FormInstance, type FormRules } from 'element-plus'
+  import { useSettingStore } from '@/store/modules/setting'
+  import { resetRouterState } from '@/router/guards/beforeEach'
+
+  defineOptions({ name: 'Login' })
+
+  const settingStore = useSettingStore()
+  const { isDark } = storeToRefs(settingStore)
+  const { t, locale } = useI18n()
+  const formKey = ref(0)
+
+  // 监听语言切换，重置表单
+  watch(locale, () => {
+    formKey.value++
+  })
+
+  const dragVerify = ref()
+
+  const userStore = useUserStore()
+  const router = useRouter()
+  const route = useRoute()
+  const isPassing = ref(false)
+  const isClickPass = ref(false)
+
+  const formRef = ref<FormInstance>()
+
+  const formData = reactive({
+    username: '',
+    password: '',
+    keepLoggedIn: false
+  })
+
+  const rules = computed<FormRules>(() => ({
+    username: [{ required: true, message: t('login.placeholder.username'), trigger: 'blur' }],
+    password: [{ required: true, message: t('login.placeholder.password'), trigger: 'blur' }]
+  }))
+
+  const loading = ref(false)
+  const DEFAULT_POST_LOGIN_PATH = '/home'
+
+  const resolvePostLoginTarget = (redirectValue: unknown) => {
+    if (typeof redirectValue !== 'string') {
+      return DEFAULT_POST_LOGIN_PATH
+    }
+
+    const redirect = redirectValue.trim()
+    if (!redirect || !redirect.startsWith('/')) {
+      return DEFAULT_POST_LOGIN_PATH
+    }
+
+    if (redirect === '/' || redirect === '/403' || redirect === '/404' || redirect === '/500') {
+      return DEFAULT_POST_LOGIN_PATH
+    }
+
+    if (redirect.startsWith('/auth/')) {
+      return DEFAULT_POST_LOGIN_PATH
+    }
+
+    return redirect
+  }
+
+  // 登录
+  const handleSubmit = async () => {
+    if (!formRef.value) return
+
+    try {
+      // 表单验证
+      const valid = await formRef.value.validate()
+      if (!valid) return
+
+      // 拖拽验证
+      if (!isPassing.value) {
+        isClickPass.value = true
+        return
+      }
+
+      loading.value = true
+
+      // 登录请求
+      const { username, password, keepLoggedIn } = formData
+
+      const { accessToken } = await fetchLogin({
+        username,
+        password,
+        keepLoggedIn
+      })
+
+      // 验证token
+      if (!accessToken) {
+        throw new Error('Login failed - no access token received')
+      }
+
+      // 存储 token 和登录状态
+      userStore.setToken(accessToken, keepLoggedIn)
+      userStore.setLoginStatus(true)
+      resetRouterState(0)
+
+      // 登录成功处理
+      showLoginSuccessNotice(username)
+
+      // 获取 redirect 参数，如果存在则跳转到指定页面，否则跳转到首页
+      const targetPath = resolvePostLoginTarget(route.query.redirect)
+      await router.replace(targetPath)
+    } catch (error) {
+      // 处理 HttpError
+      if (error instanceof HttpError) {
+        // console.log(error.code)
+      } else {
+        // 处理非 HttpError
+        // ElMessage.error('登录失败，请稍后重试')
+        console.error('[Login] Unexpected error:', error)
+      }
+    } finally {
+      loading.value = false
+      resetDragVerify()
+    }
+  }
+
+  // 重置拖拽验证
+  const resetDragVerify = () => {
+    dragVerify.value?.reset?.()
+  }
+
+  // 登录成功提示
+  const showLoginSuccessNotice = (username: string) => {
+    setTimeout(() => {
+      ElNotification({
+        title: t('login.success.title'),
+        type: 'success',
+        duration: 2500,
+        zIndex: 10000,
+        message: `${t('login.success.message')}, ${username}!`
+      })
+    }, 1000)
+  }
+</script>
+
+<style scoped>
+  @import './style.css';
+</style>

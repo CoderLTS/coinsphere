@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "example.business",
+  "name": "业务事项",
+  "version": "1.0.0",
+  "sdkMajor": 5,
+  "requiresCore": "^5.0.0",
+  "backend": {
+    "module": "example.test/coinsphere/business",
+    "package": "backend"
+  },
+  "frontend": {
+    "entry": "frontend/index.ts"
+  },
+  "migrations": {
+    "directory": "migrations"
+  },
+  "contributes": [
+    "nodes",
+    "apiRoutes",
+    "resultPages",
+    "runPanels",
+    "migrations"
+  ]
+}

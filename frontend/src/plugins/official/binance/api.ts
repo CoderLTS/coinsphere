@@ -1,0 +1,95 @@
+import request from '@/utils/http'
+import type { KLineIndicatorConfig } from '@/types/component/chart'
+
+export interface ItemList<T> {
+  items: T[]
+  nextBefore?: string
+  hasMore?: boolean
+}
+
+export interface BinanceInstrument {
+  market: 'spot' | 'usdm'
+  symbol: string
+  baseAsset: string
+  quoteAsset: string
+  status: string
+  priceTick: string
+  quantityStep: string
+  minQuantity: string
+  updatedAt: string
+}
+
+export interface BinanceCandle {
+  venue: string
+  market: 'spot' | 'usdm'
+  instrument: string
+  interval: string
+  openTime: string
+  closeTime: string
+  open: string
+  high: string
+  low: string
+  close: string
+  volume: string
+}
+
+export interface BinanceIndicatorPoint {
+  openTime: string
+  main: Record<string, string | null>
+  sub: Record<string, string | null>
+}
+
+export type BinanceIndicatorParams = KLineIndicatorConfig
+
+export const indicatorQueryParams = (config?: BinanceIndicatorParams) =>
+  config
+    ? {
+        maPeriods: config.maPeriods.join(','),
+        emaPeriods: config.emaPeriods.join(','),
+        bollPeriod: config.bollPeriod,
+        bollMultiplier: config.bollMultiplier,
+        macdFast: config.macdFast,
+        macdSlow: config.macdSlow,
+        macdSignal: config.macdSignal,
+        rsiPeriod: config.rsiPeriod,
+        kdjPeriod: config.kdjPeriod,
+        kdjK: config.kdjK,
+        kdjD: config.kdjD,
+        wrPeriod: config.wrPeriod
+      }
+    : undefined
+
+const binanceBase = '/api/v1/plugins/official.binance'
+
+export const fetchBinanceInstruments = (market: 'spot' | 'usdm') =>
+  request.get<ItemList<BinanceInstrument>>({
+    url: `${binanceBase}/instruments`,
+    params: { market }
+  })
+
+export const fetchBinanceCandles = (params: {
+  market: 'spot' | 'usdm'
+  instrument: string
+  interval: string
+  before?: string
+  startTime?: string
+  endTime?: string
+  limit?: number
+}) => request.get<ItemList<BinanceCandle>>({ url: `${binanceBase}/candles`, params })
+
+export const fetchBinanceIndicators = (params: {
+  market: 'spot' | 'usdm'
+  instrument: string
+  interval: string
+  startTime?: string
+  endTime?: string
+  limit?: number
+  indicatorConfig?: BinanceIndicatorParams
+}) =>
+  request.get<ItemList<BinanceIndicatorPoint>>({
+    url: `${binanceBase}/candles/indicators`,
+    params: (() => {
+      const { indicatorConfig, ...query } = params
+      return { ...query, ...indicatorQueryParams(indicatorConfig) }
+    })()
+  })
