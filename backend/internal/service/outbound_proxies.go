@@ -51,7 +51,7 @@ type OutboundProxyView struct {
 func (a *App) ListOutboundProxies(ctx context.Context) ([]OutboundProxyView, error) {
 	var rows []db.OutboundProxy
 	if err := a.DB.WithContext(ctx).Order("name, id").Find(&rows).Error; err != nil {
-		return nil, errors.New("list outbound proxies failed")
+		return nil, errors.New("读取出站代理失败")
 	}
 	result := make([]OutboundProxyView, len(rows))
 	for index := range rows {
@@ -69,7 +69,7 @@ func (a *App) CreateOutboundProxy(ctx context.Context, payload OutboundProxyUpse
 		return OutboundProxyView{}, err
 	}
 	if err := a.DB.WithContext(ctx).Create(&proxy).Error; err != nil {
-		return OutboundProxyView{}, errors.New("create outbound proxy failed")
+		return OutboundProxyView{}, errors.New("创建出站代理失败")
 	}
 	return outboundProxyView(proxy), nil
 }
@@ -94,7 +94,7 @@ func (a *App) UpdateOutboundProxy(ctx context.Context, proxyID int64, payload Ou
 		"updated_by": proxy.UpdatedBy, "updated_at": proxy.UpdatedAt,
 	}
 	if err := a.DB.WithContext(ctx).Model(&current).Updates(updates).Error; err != nil {
-		return OutboundProxyView{}, errors.New("update outbound proxy failed")
+		return OutboundProxyView{}, errors.New("更新出站代理失败")
 	}
 	proxy.ID, proxy.CreatedAt = current.ID, current.CreatedAt
 	proxy.LastCheckStatus, proxy.LastCheckedAt, proxy.LastLatencyMS = "unchecked", nil, nil
@@ -106,16 +106,16 @@ func (a *App) PatchOutboundProxy(ctx context.Context, proxyID int64, payload Out
 		return OutboundProxyView{}, ErrPermission
 	}
 	if payload.IsEnabled == nil {
-		return OutboundProxyView{}, errors.New("isEnabled is required")
+		return OutboundProxyView{}, errors.New("请选择是否启用")
 	}
 	result := a.DB.WithContext(ctx).Model(&db.OutboundProxy{}).Where("id = ?", proxyID).Updates(map[string]any{
 		"is_enabled": *payload.IsEnabled, "updated_by": principal.User.ID, "updated_at": time.Now().UTC(),
 	})
 	if result.Error != nil {
-		return OutboundProxyView{}, errors.New("update outbound proxy status failed")
+		return OutboundProxyView{}, errors.New("更新出站代理状态失败")
 	}
 	if result.RowsAffected == 0 {
-		return OutboundProxyView{}, fmt.Errorf("%w: outbound proxy", ErrNotFound)
+		return OutboundProxyView{}, fmt.Errorf("%w：出站代理", ErrNotFound)
 	}
 	var proxy db.OutboundProxy
 	if err := a.DB.WithContext(ctx).First(&proxy, proxyID).Error; err != nil {
@@ -136,17 +136,17 @@ func (a *App) DeleteOutboundProxy(ctx context.Context, proxyID int64) error {
 		)
 	`, strconv.FormatInt(proxyID, 10)).Scan(&references).Error
 	if err != nil {
-		return errors.New("count outbound proxy references failed")
+		return errors.New("读取出站代理引用数量失败")
 	}
 	if references > 0 {
-		return fmt.Errorf("%w: outbound proxy is referenced by workflow revisions", ErrConflict)
+		return fmt.Errorf("%w：出站代理仍被工作流版本引用", ErrConflict)
 	}
 	result := a.DB.WithContext(ctx).Delete(&db.OutboundProxy{}, proxyID)
 	if result.Error != nil {
-		return errors.New("delete outbound proxy failed")
+		return errors.New("删除出站代理失败")
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: outbound proxy", ErrNotFound)
+		return fmt.Errorf("%w：出站代理", ErrNotFound)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func (a *App) ValidateOutboundProxy(ctx context.Context, proxyID int64) (M, erro
 		Transport: transport,
 		Timeout:   15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return errors.New("proxy validation redirects are disabled")
+			return errors.New("代理验证不允许重定向")
 		},
 	}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/", nil)
@@ -178,7 +178,7 @@ func (a *App) ValidateOutboundProxy(ctx context.Context, proxyID int64) (M, erro
 		if requestErr == nil {
 			_, requestErr = io.ReadAll(io.LimitReader(response.Body, 64<<10))
 			if response.StatusCode != http.StatusOK {
-				requestErr = errors.New("unexpected proxy validation status")
+				requestErr = errors.New("代理验证返回了异常状态")
 			}
 		}
 	}
@@ -191,7 +191,7 @@ func (a *App) ValidateOutboundProxy(ctx context.Context, proxyID int64) (M, erro
 	if err := a.DB.WithContext(ctx).Model(&db.OutboundProxy{}).Where("id = ?", proxyID).Updates(map[string]any{
 		"last_check_status": status, "last_checked_at": checkedAt, "last_latency_ms": latencyMS,
 	}).Error; err != nil {
-		return nil, errors.New("save outbound proxy validation failed")
+		return nil, errors.New("保存代理验证结果失败")
 	}
 	return M{
 		"success": status == "healthy", "status": status, "message": message,
@@ -217,25 +217,25 @@ func (a *App) buildOutboundProxy(ctx context.Context, payload OutboundProxyUpser
 	host, validHost := normalizeProxyHost(payload.Host)
 	username := strings.TrimSpace(payload.Username)
 	if name == "" || utf8.RuneCountInString(name) > 120 {
-		return db.OutboundProxy{}, errors.New("name must contain 1 to 120 characters")
+		return db.OutboundProxy{}, errors.New("名称须为 1 至 120 个字符")
 	}
 	if protocol != "http" && protocol != "socks5" {
-		return db.OutboundProxy{}, errors.New("protocol must be http or socks5")
+		return db.OutboundProxy{}, errors.New("代理协议须为 HTTP 或 SOCKS5")
 	}
 	if !validHost {
-		return db.OutboundProxy{}, errors.New("host must be a valid IP address or domain name")
+		return db.OutboundProxy{}, errors.New("主机须为有效 IP 地址或域名")
 	}
 	if payload.Port < 1 || payload.Port > 65535 {
-		return db.OutboundProxy{}, errors.New("port must be between 1 and 65535")
+		return db.OutboundProxy{}, errors.New("端口须为 1 至 65535")
 	}
 	if utf8.RuneCountInString(username) > 255 {
-		return db.OutboundProxy{}, errors.New("username must not exceed 255 characters")
+		return db.OutboundProxy{}, errors.New("用户名不能超过 255 个字符")
 	}
 	if payload.Password != nil && len(*payload.Password) > 4096 {
-		return db.OutboundProxy{}, errors.New("password must not exceed 4096 bytes")
+		return db.OutboundProxy{}, errors.New("密码不能超过 4096 字节")
 	}
 	if payload.Password != nil && payload.ClearPassword {
-		return db.OutboundProxy{}, errors.New("password and clearPassword cannot be used together")
+		return db.OutboundProxy{}, errors.New("不能同时设置和清除密码")
 	}
 	query := a.DB.WithContext(ctx).Model(&db.OutboundProxy{}).Where("LOWER(name) = LOWER(?)", name)
 	if current != nil {
@@ -243,10 +243,10 @@ func (a *App) buildOutboundProxy(ctx context.Context, payload OutboundProxyUpser
 	}
 	var duplicate int64
 	if err := query.Count(&duplicate).Error; err != nil {
-		return db.OutboundProxy{}, errors.New("check outbound proxy name failed")
+		return db.OutboundProxy{}, errors.New("检查出站代理名称失败")
 	}
 	if duplicate > 0 {
-		return db.OutboundProxy{}, fmt.Errorf("%w: outbound proxy name already exists", ErrConflict)
+		return db.OutboundProxy{}, fmt.Errorf("%w：出站代理名称已存在", ErrConflict)
 	}
 	enabled, ciphertext, createdAt, createdBy := true, "", time.Now().UTC(), userID
 	if current != nil {
@@ -279,7 +279,7 @@ func (a *App) loadOutboundProxyURL(ctx context.Context, proxyID int64, requireEn
 	}
 	password, err := a.Cipher.Decrypt(proxy.PasswordCiphertext)
 	if err != nil {
-		return nil, errors.New("decrypt outbound proxy password failed")
+		return nil, errors.New("解密出站代理密码失败")
 	}
 	proxyURL := &url.URL{Scheme: proxy.Protocol, Host: net.JoinHostPort(proxy.Host, strconv.Itoa(proxy.Port))}
 	if proxy.Username != "" || password != "" {
@@ -326,7 +326,7 @@ func normalizeProxyHost(raw string) (string, bool) {
 
 func outboundProxyLookupError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("%w: outbound proxy", ErrNotFound)
+		return fmt.Errorf("%w：出站代理", ErrNotFound)
 	}
-	return errors.New("load outbound proxy failed")
+	return errors.New("读取出站代理失败")
 }

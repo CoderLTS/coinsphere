@@ -26,7 +26,7 @@ func lockRunLease(tx *gorm.DB, run db.WorkflowRun, allowCancelled bool, result *
 		result = &db.WorkflowRun{}
 	}
 	if err := runLeaseQuery(tx, run, allowCancelled).Clauses(clause.Locking{Strength: "UPDATE"}).First(result).Error; err != nil {
-		return fmt.Errorf("%w: execution lease is no longer valid", ErrConflict)
+		return fmt.Errorf("%w：执行租约已失效", ErrConflict)
 	}
 	return nil
 }

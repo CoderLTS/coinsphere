@@ -14,7 +14,7 @@ import (
 
 func (a *App) DeliverInbox(ctx context.Context, request sdk.InboxRequest) (json.RawMessage, error) {
 	if len(request.Title) > 255 || len(request.Message) > 10000 || request.OperationKey == "" || len(request.SubjectKey) > 128 {
-		return nil, errors.New("invalid inbox request")
+		return nil, errors.New("站内通知请求无效")
 	}
 	workflowID, revisionID, err := request.Revision.IDs()
 	if err != nil {
@@ -53,7 +53,7 @@ func (a *App) DeliverInbox(ctx context.Context, request sdk.InboxRequest) (json.
 		return nil, err
 	}
 	if len(deliveries) != len(recipients) {
-		return nil, errors.New("inbox recipient mismatch")
+		return nil, errors.New("站内通知收件人不匹配")
 	}
 	ids := []int64{}
 	for _, d := range deliveries {
@@ -65,7 +65,7 @@ func (a *App) DeliverInbox(ctx context.Context, request sdk.InboxRequest) (json.
 func (a *App) inboxRecipients(ctx context.Context, workflowID int64) ([]int64, error) {
 	var owner db.SystemUser
 	if err := a.DB.WithContext(ctx).Where("username='coinsphere' AND is_active").First(&owner).Error; err != nil {
-		return nil, errors.New("personal notification recipient is unavailable")
+		return nil, errors.New("个人账号通知收件人不可用")
 	}
 	var count int64
 	if err := a.DB.WithContext(ctx).Model(&db.Workflow{}).Where("id=?", workflowID).Count(&count).Error; err != nil || count != 1 {

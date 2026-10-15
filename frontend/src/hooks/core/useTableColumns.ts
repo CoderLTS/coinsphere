@@ -34,6 +34,7 @@
  */
 
 import { ref, computed, watch } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { $t } from '@/locales'
 import type { ColumnOption } from '@/types/component'
 
@@ -126,13 +127,44 @@ export interface DynamicColumnConfig<T = any> {
 }
 
 export function useTableColumns<T = any>(
-  columnsFactory: () => ColumnOption<T>[]
+  columnsFactory: () => ColumnOption<T>[],
+  storageKey?: string
 ): {
   columns: any
   columnChecks: any
 } & DynamicColumnConfig<T> {
   const dynamicColumns = ref<ColumnOption<T>[]>(columnsFactory())
   const columnChecks = ref<ColumnOption<T>[]>(getColumnChecks(dynamicColumns.value))
+
+  if (storageKey) {
+    const saved = useLocalStorage<{ prop: string; visible: boolean }[]>(
+      'coinsphere.columns.' + storageKey,
+      []
+    )
+    if (Array.isArray(saved.value)) {
+      const checks = columnChecks.value
+      const order = saved.value.filter((item) => item && typeof item.prop === 'string')
+      columnChecks.value = [
+        ...order.flatMap((item) => {
+          const column = checks.find((column) => getColumnKey(column) === item.prop)
+          return column
+            ? [{ ...column, visible: column.type === 'selection' ? true : item.visible !== false }]
+            : []
+        }),
+        ...checks.filter((column) => !order.some((item) => item.prop === getColumnKey(column)))
+      ]
+    }
+    watch(
+      columnChecks,
+      (checks) => {
+        saved.value = checks.map((column) => ({
+          prop: getColumnKey(column),
+          visible: getColumnVisibility(column)
+        }))
+      },
+      { deep: true }
+    )
+  }
 
   // 当 dynamicColumns 变动时，重新生成 columnChecks 且保留已存在的显示状态
   watch(

@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	Core     = "5.0.0"
-	SDKMajor = 5
+	Core     = "1.0.0"
+	SDKMajor = 1
 )
 
 //go:embed builtin.json

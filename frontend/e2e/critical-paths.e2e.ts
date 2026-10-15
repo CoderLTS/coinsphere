@@ -50,6 +50,7 @@ const nodeDefinitions = ['manual', 'end'].map((type) => ({
   title: type === 'manual' ? '手工入口' : '结束',
   kind: type === 'manual' ? 'trigger' : 'action',
   category: 'Core',
+  categoryTitle: '系统节点',
   description: '',
   capabilities: { deterministic: true, stateless: true },
   configSchema: {},
@@ -67,6 +68,7 @@ nodeDefinitions.push({
   title: '条件判断',
   kind: 'action',
   category: 'Core',
+  categoryTitle: '系统节点',
   description: '',
   capabilities: { deterministic: true, stateless: true },
   configSchema: {
@@ -144,6 +146,8 @@ async function backendFixture(
     expired?: boolean
     navigation?: boolean
     ai?: boolean
+    conflict?: 'save' | 'publish'
+    unknownResult?: boolean
   } = {}
 ) {
   page.on('pageerror', (error) => console.error('UI runtime error:', error.message))
@@ -170,6 +174,8 @@ async function backendFixture(
     status: 'inactive',
     draftRevisionId: 11,
     publishedRevisionId: 0,
+    draftRevisionNumber: 1,
+    publishedRevisionNumber: undefined as number | undefined,
     mainTriggerNodeId: 'start',
     retentionDays: 30,
     createdBy: 1,
@@ -194,10 +200,13 @@ async function backendFixture(
     id: 21,
     workflowId: 7,
     revisionId: 11,
+    workflowName: '业务审批示例',
+    revisionNumber: 1,
     entryPoint: 'main',
     input: {},
     triggerType: 'manual',
-    status: 'waiting',
+    status: options.unknownResult ? 'failed' : 'waiting',
+    errorCategory: options.unknownResult ? 'unknown_result' : '',
     triggeredAt: createdAt,
     diagnostic: false,
     resultSummary: {},
@@ -235,7 +244,7 @@ async function backendFixture(
     {
       id: view.pluginId,
       name: '结果插件',
-      version: '5.0.0',
+      version: '1.0.0',
       pages: [],
       headerActions: [],
       resultPages: [
@@ -243,11 +252,6 @@ async function backendFixture(
           pageKey: view.pageKey,
           title: '模拟结果',
           componentEntry: 'PaperResultPage',
-          configComponentEntry: options.quant
-            ? 'BacktestResultConfig.vue'
-            : options.business
-              ? undefined
-              : 'PaperResultConfig.vue',
           scopeSchema: {},
           filterSchema: {
             type: 'object',
@@ -294,7 +298,7 @@ async function backendFixture(
     catalog.push({
       id: 'official.ai',
       name: '人工智能',
-      version: '5.0.0',
+      version: '1.0.0',
       pages: [{ pageKey: 'models', title: '模型配置', icon: 'ri:brain-line' }],
       resultPages: [],
       runPanels: [],
@@ -483,7 +487,24 @@ async function backendFixture(
       return
     }
     if (path === '/api/v1/human-tasks') {
-      await reply({ items: tasks })
+      const query = new URL(route.request().url()).searchParams
+      const records = tasks.filter(
+        (task) =>
+          (!query.get('status') || task.status === query.get('status')) &&
+          (!query.get('workflowId') || task.workflowId === Number(query.get('workflowId'))) &&
+          (!query.get('runId') || task.runId === Number(query.get('runId')))
+      )
+      await reply({ records, total: records.length, hasMore: false, nextCursor: '' })
+      return
+    }
+    if (method === 'GET' && path === '/api/v1/workflow-runs') {
+      const query = new URL(route.request().url()).searchParams
+      const records = [run].filter(
+        (item) =>
+          (!query.get('status') || item.status === query.get('status')) &&
+          (!query.get('workflowId') || item.workflowId === Number(query.get('workflowId')))
+      )
+      await reply({ records, total: records.length, hasMore: false, nextCursor: '' })
       return
     }
     if (method === 'PUT' && path === '/api/v1/workflow-groups/order') {
@@ -597,6 +618,7 @@ async function backendFixture(
       const records = Array.from({ length: options.count ?? 1 }, (_, index) => ({
         ...workflow,
         id: 7 + index,
+        latestRunTriggeredAt: createdAt,
         name: `业务审批示例 ${index + 1}`,
         latestRunId: 21,
         latestRunStatus: index % 2 ? 'retrying' : 'waiting',
@@ -633,23 +655,40 @@ async function backendFixture(
     if (method === 'POST' && path === '/api/v1/workflows/7/revisions') {
       const body = route.request().postDataJSON()
       payloads.push(body)
+      if (options.conflict === 'save') {
+        await fulfillApi(route, null, 409, '草稿版本已更新')
+        return
+      }
       revision = { ...revision, id: 12, revisionNumber: 2, graph: body.graph }
       revisions.unshift(revision)
-      Object.assign(workflow, body.metadata, { draftRevisionId: revision.id })
+      Object.assign(workflow, body.metadata, {
+        draftRevisionId: revision.id,
+        draftRevisionNumber: revision.revisionNumber
+      })
       await reply(revision)
       return
     }
     if (method === 'POST' && path === '/api/v1/workflows/7/publish') {
       const body = route.request().postDataJSON()
       payloads.push(body)
+      if (options.conflict === 'publish') {
+        await fulfillApi(route, null, 409, '发布版本已更新')
+        return
+      }
       workflow.publishedRevisionId = body.revisionId
+      workflow.publishedRevisionNumber = revisions.find(
+        (item) => item.id === body.revisionId
+      )?.revisionNumber
       await reply(workflow)
       return
     }
     if (method === 'POST' && path === '/api/v1/workflows/7/runs') {
       const body = route.request().postDataJSON()
       payloads.push(body)
-      Object.assign(run, body)
+      Object.assign(run, body, {
+        workflowName: workflow.name,
+        revisionNumber: revisions.find((item) => item.id === body.revisionId)?.revisionNumber
+      })
       await reply(run)
       return
     }
@@ -707,7 +746,7 @@ test('三级菜单移动和改名立即刷新导航与已有标签，刷新后�
     .filter({ hasText: '模拟交易结果' })
     .getByRole('button', { name: '编辑', exact: true })
     .click()
-  const dialog = page.getByRole('dialog', { name: '编辑菜单' })
+  const dialog = page.getByRole('region', { name: '编辑菜单' })
   await dialog.getByLabel('菜单名称', { exact: true }).fill('我的 Paper')
   await dialog
     .locator('.el-form-item')
@@ -716,7 +755,7 @@ test('三级菜单移动和改名立即刷新导航与已有标签，刷新后�
     .click()
   await page.getByRole('option').filter({ hasText: '分析' }).click()
   await dialog.getByRole('spinbutton').fill('5')
-  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await dialog.getByRole('button', { name: '保存菜单', exact: true }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.locator('li[id^="scroll-li-"]').filter({ hasText: '我的 Paper' })).toBeVisible()
   await page.locator('.el-sub-menu__title').filter({ hasText: '自选目录' }).click()
@@ -750,13 +789,13 @@ test('隐藏菜单立即移除导航入口并保留页面直接访问', async ({
     .filter({ hasText: '模拟交易结果' })
     .getByRole('button', { name: '编辑', exact: true })
     .click()
-  const dialog = page.getByRole('dialog', { name: '编辑菜单' })
+  const dialog = page.getByRole('region', { name: '编辑菜单' })
   await dialog
     .locator('.el-form-item')
     .filter({ hasText: '隐藏菜单' })
     .locator('.el-switch')
     .click()
-  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await dialog.getByRole('button', { name: '保存菜单', exact: true }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.getByRole('menuitem').filter({ hasText: '模拟交易结果' })).toHaveCount(0)
   await page.goto('/plugins/official.binance/result/paper')
@@ -822,14 +861,20 @@ test('作者完成创建、保存、发布和手工运行', async ({ page }) => 
   await expect(page.getByText('草稿已保存', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '发布草稿', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '基础信息', exact: true }).click()
-  await expect(page.getByText(/草稿\s*#11\s*·\s*已发布\s*暂无/)).toBeVisible()
+  await expect(
+    page.locator('.workflow-meta').getByText(/草稿\s*v1\s*\/\s*已发布\s*暂无/)
+  ).toBeVisible()
   await page.locator('.workflow-meta input').first().fill('修改后的业务流程')
   await page.getByRole('button', { name: '保存草稿', exact: true }).click()
-  await expect(page.getByText(/草稿\s*#12\s*·\s*已发布\s*暂无/)).toBeVisible()
+  await expect(
+    page.locator('.workflow-meta').getByText(/草稿\s*v2\s*\/\s*已发布\s*暂无/)
+  ).toBeVisible()
   expect(backend.workflow.publishedRevisionId).toBe(0)
   await page.getByRole('button', { name: '发布草稿', exact: true }).click()
-  await expect(page.getByText(/草稿\s*#12\s*·\s*已发布\s*#12/)).toBeVisible()
-  await page.getByRole('button', { name: '运行', exact: true }).click()
+  await expect(
+    page.locator('.workflow-meta').getByText(/草稿\s*v2\s*\/\s*已发布\s*v2/)
+  ).toBeVisible()
+  await page.getByRole('button', { name: '试运行', exact: true }).click()
   await page.getByRole('button', { name: '加入运行队列' }).click()
   await expect(page).toHaveURL(/\/scheduler\/execution\/21\/detail$/)
   await expect(page.getByRole('heading', { name: '运行 #21' })).toBeVisible()
@@ -880,7 +925,7 @@ test('插件菜单默认展示模拟交易结果并支持筛选刷新和运行�
   const filtered = page.waitForRequest(
     (r) => r.url().includes('/results/paper') && r.url().includes('instrument=BTCUSDT')
   )
-  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  await page.getByRole('button', { name: '查询', exact: true }).click()
   await filtered
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await page.getByRole('button', { name: '#21', exact: true }).click()
@@ -898,7 +943,7 @@ test('量化菜单直接查询并复用回测分析', async ({ page }) => {
   const filtered = page.waitForRequest(
     (r) => r.url().includes('/results/backtests?') && r.url().includes('instrument=BTCUSDT')
   )
-  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  await page.getByRole('button', { name: '查询', exact: true }).click()
   await filtered
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await page.getByRole('button', { name: '详情', exact: true }).click()
@@ -1168,5 +1213,140 @@ test('拖动连线与撤销重做保存真实画布状态', async ({ page }) => 
   expect(connected.graph.edges[1]).toEqual(
     expect.objectContaining({ sourcePort: 'true', targetPort: 'in', targetNodeInstanceId: 'end' })
   )
+  expect(backend.unexpected).toEqual([])
+})
+
+test('未发布草稿可试运行，未保存内容必须先明确保存', async ({ page }) => {
+  const backend = await backendFixture(page)
+  await page.goto('/scheduler/workflow/7/edit')
+  await page.getByRole('button', { name: '基础信息', exact: true }).click()
+  await page.locator('.workflow-meta input').first().fill('尚未保存的名称')
+  await page.getByRole('button', { name: '试运行', exact: true }).click()
+  await expect(page.getByText('请先明确点击“保存草稿”，再选择版本试运行')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '试运行工作流' })).toHaveCount(0)
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(page.getByText('草稿已保存', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '试运行', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '试运行工作流' })
+  await expect(dialog).toContainText('试运行会实际执行')
+  await dialog.getByRole('button', { name: '加入运行队列' }).click()
+  await expect(page).toHaveURL(/execution[/]21[/]detail/)
+  expect(backend.workflow.publishedRevisionId).toBe(0)
+  expect(backend.payloads).toContainEqual({ revisionId: 12, entryPoint: 'main', input: {} })
+  expect(backend.unexpected).toEqual([])
+})
+
+test('保存期间锁定编辑，完成后恢复草稿操作', async ({ page }) => {
+  const backend = await backendFixture(page)
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/v1/workflows/7/revisions', async (route) => {
+    if (route.request().method() === 'POST') await pending
+    await route.fallback()
+  })
+  await page.goto('/scheduler/workflow/7/edit')
+  await page.getByRole('button', { name: '基础信息', exact: true }).click()
+  const name = page.locator('.workflow-meta input').first()
+  await name.fill('保存期间保护')
+  const saving = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/v1/workflows/7/revisions'
+  )
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await saving
+  try {
+    await expect(name).toBeDisabled()
+    await expect(page.locator('.workflow-meta .el-select')).toHaveClass(/is-disabled/)
+  } finally {
+    release()
+  }
+  await expect(page.getByText('草稿已保存', { exact: true })).toBeVisible()
+  await expect(name).toBeEnabled()
+  await expect(name).toHaveValue('保存期间保护')
+  expect(backend.unexpected).toEqual([])
+})
+
+test('运行中心恢复 URL 筛选并显示名称与修订摘要', async ({ page }) => {
+  const backend = await backendFixture(page)
+  await page.goto('/scheduler/execution?workflowId=7&status=waiting')
+  await expect(page.getByText('业务审批示例', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('v1', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('工作流编号')).toHaveValue('7')
+  await page.reload()
+  await expect(page.getByLabel('工作流编号')).toHaveValue('7')
+  await page.getByRole('button', { name: '详情', exact: true }).click()
+  await expect(page).toHaveURL(/execution[/]21[/]detail/)
+  expect(backend.calls.some((call) => call === 'GET /api/v1/workflow-runs')).toBe(true)
+  expect(backend.unexpected).toEqual([])
+})
+
+test('人工待办保留全部状态筛选，运行详情只读取本次待办', async ({ page }) => {
+  const backend = await backendFixture(page)
+  await page.goto('/scheduler/tasks?status=&runId=21')
+  await expect(page.getByText('审核合成业务事项')).toBeVisible()
+  await expect(page.getByLabel('待办状态')).toHaveValue('')
+  await page.reload()
+  await expect(page.getByText('审核合成业务事项')).toBeVisible()
+  await expect(page.getByLabel('待办状态')).toHaveValue('')
+  const scoped = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname === '/api/v1/human-tasks' &&
+      url.searchParams.get('runId') === '21' &&
+      url.searchParams.get('status') === 'pending'
+    )
+  })
+  await page.goto('/scheduler/execution/21/detail')
+  await scoped
+  await expect(page.getByText('审核合成业务事项')).toBeVisible()
+  expect(backend.unexpected).toEqual([])
+})
+
+test('历史修订只读，返回草稿后恢复编辑', async ({ page }) => {
+  const backend = await backendFixture(page)
+  await page.goto('/scheduler/workflow/7/edit')
+  await page.getByRole('button', { name: '基础信息', exact: true }).click()
+  await page.locator('.workflow-meta input').first().fill('第二版')
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(page.getByText('草稿已保存', { exact: true })).toBeVisible()
+  await page.locator('.workflow-meta .el-select').click()
+  await page.getByRole('option', { name: 'v1', exact: true }).click()
+  await expect(page.getByText('历史版本 · 只读')).toBeVisible()
+  await expect(page.locator('.workflow-meta input').first()).toBeDisabled()
+  await expect(page.getByRole('button', { name: '保存草稿', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '发布草稿', exact: true })).toBeDisabled()
+  await page.locator('.workflow-meta .el-select').click()
+  await page.getByRole('option', { name: 'v2 · 草稿', exact: true }).click()
+  await expect(page.locator('.workflow-meta input').first()).toBeEnabled()
+  await expect(page.getByRole('button', { name: '保存草稿', exact: true })).toBeVisible()
+  expect(backend.unexpected).toEqual([])
+})
+
+for (const conflict of ['save', 'publish'] as const)
+  test(conflict + ' 冲突保留编辑内容和版本', async ({ page }) => {
+    const backend = await backendFixture(page, { conflict })
+    await page.goto('/scheduler/workflow/7/edit')
+    await page.getByRole('button', { name: '基础信息', exact: true }).click()
+    if (conflict === 'save') await page.locator('.workflow-meta input').first().fill('保留我的编辑')
+    await page
+      .getByRole('button', { name: conflict === 'save' ? '保存草稿' : '发布草稿', exact: true })
+      .click()
+    await expect(page.locator('.editor-alert')).toContainText('当前编辑内容已保留')
+    await expect(page.locator('.workflow-meta input').first()).toHaveValue(
+      conflict === 'save' ? '保留我的编辑' : '业务审批示例'
+    )
+    expect(backend.workflow.draftRevisionId).toBe(11)
+    expect(backend.workflow.publishedRevisionId).toBe(0)
+    expect(backend.unexpected).toEqual([])
+  })
+
+test('外部结果未知的失败运行禁止直接重试', async ({ page }) => {
+  const backend = await backendFixture(page, { unknownResult: true })
+  await page.goto('/scheduler/execution/21/detail')
+  await expect(page.getByRole('button', { name: '重试', exact: true })).toBeDisabled()
+  expect(backend.payloads).toEqual([])
   expect(backend.unexpected).toEqual([])
 })

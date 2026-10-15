@@ -38,7 +38,7 @@ func (a *App) PublishWorkflowRevision(ctx context.Context, workflowID int64, pay
 		return WorkflowDetail{}, err
 	}
 	if payload.RevisionID <= 0 || payload.ExpectedPublishedRevisionID < 0 {
-		return WorkflowDetail{}, errors.New("invalid publish precondition")
+		return WorkflowDetail{}, errors.New("发布版本或预期已发布版本编号无效")
 	}
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := a.authorizeWorkflowCommandTx(tx, ctx, workflowID); err != nil {
@@ -49,11 +49,11 @@ func (a *App) PublishWorkflowRevision(ctx context.Context, workflowID int64, pay
 			return err
 		}
 		if revisionPointerValue(workflow.PublishedRevisionID) != payload.ExpectedPublishedRevisionID {
-			return fmt.Errorf("%w: published revision changed", ErrConflict)
+			return fmt.Errorf("%w：已发布版本发生变更，请刷新版本信息", ErrConflict)
 		}
 		var revision db.WorkflowRevision
 		if err := tx.Where("workflow_id=? AND id=?", workflowID, payload.RevisionID).First(&revision).Error; err != nil {
-			return fmt.Errorf("%w: revision", ErrNotFound)
+			return fmt.Errorf("%w：工作流版本", ErrNotFound)
 		}
 		g, err := a.validateWorkflowGraph(json.RawMessage(revision.GraphJSON))
 		if err != nil {
@@ -133,7 +133,7 @@ func (a *App) addPluginReference(tx *gorm.DB, pluginID, kind, id string) error {
 		}
 	}
 	if installation.Status != "installed" || expected == "" || installation.Version != expected {
-		return fmt.Errorf("%w: plugin %s is unavailable", ErrConflict, pluginID)
+		return fmt.Errorf("%w：插件 %s 不可用", ErrConflict, pluginID)
 	}
 	return tx.Exec(`INSERT INTO plugin_references(plugin_id,reference_type,reference_id,active) VALUES (?,?,?,TRUE) ON CONFLICT(plugin_id,reference_type,reference_id) DO UPDATE SET active=TRUE`, pluginID, kind, id).Error
 }

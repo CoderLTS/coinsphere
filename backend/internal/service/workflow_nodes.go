@@ -19,42 +19,54 @@ type WorkflowSecretFieldView struct {
 }
 
 type WorkflowNodeDefinitionView struct {
-	EditorKey    string                    `json:"editorKey,omitempty"`
-	PluginID     string                    `json:"pluginId,omitempty"`
-	Type         string                    `json:"type"`
-	Version      string                    `json:"version"`
-	Title        string                    `json:"title"`
-	Description  string                    `json:"description"`
-	Kind         sdk.NodeKind              `json:"kind"`
-	Category     string                    `json:"category"`
-	Aliases      []string                  `json:"aliases,omitempty"`
-	Tags         []string                  `json:"tags,omitempty"`
-	SortOrder    int                       `json:"sortOrder"`
-	Color        string                    `json:"color"`
-	Icon         string                    `json:"icon"`
-	Width        int                       `json:"width"`
-	Height       int                       `json:"height"`
-	Capabilities sdk.NodeCapabilities      `json:"capabilities"`
-	ConfigSchema json.RawMessage           `json:"configSchema"`
-	UISchema     json.RawMessage           `json:"uiSchema"`
-	InputSchema  json.RawMessage           `json:"inputSchema"`
-	OutputSchema json.RawMessage           `json:"outputSchema"`
-	Branches     []string                  `json:"branches,omitempty"`
-	InputPorts   []string                  `json:"inputPorts"`
-	OutputPorts  []string                  `json:"outputPorts"`
-	SecretFields []WorkflowSecretFieldView `json:"secretFields"`
-	Available    bool                      `json:"available"`
+	EditorKey     string                    `json:"editorKey,omitempty"`
+	PluginID      string                    `json:"pluginId,omitempty"`
+	PluginName    string                    `json:"pluginName,omitempty"`
+	Type          string                    `json:"type"`
+	Version       string                    `json:"version"`
+	Title         string                    `json:"title"`
+	Description   string                    `json:"description"`
+	Kind          sdk.NodeKind              `json:"kind"`
+	CategoryTitle string                    `json:"categoryTitle"`
+	Category      string                    `json:"category"`
+	Aliases       []string                  `json:"aliases,omitempty"`
+	Tags          []string                  `json:"tags,omitempty"`
+	SortOrder     int                       `json:"sortOrder"`
+	Color         string                    `json:"color"`
+	Icon          string                    `json:"icon"`
+	Width         int                       `json:"width"`
+	Height        int                       `json:"height"`
+	Capabilities  sdk.NodeCapabilities      `json:"capabilities"`
+	ConfigSchema  json.RawMessage           `json:"configSchema"`
+	UISchema      json.RawMessage           `json:"uiSchema"`
+	InputSchema   json.RawMessage           `json:"inputSchema"`
+	OutputSchema  json.RawMessage           `json:"outputSchema"`
+	Branches      []string                  `json:"branches,omitempty"`
+	InputPorts    []string                  `json:"inputPorts"`
+	OutputPorts   []string                  `json:"outputPorts"`
+	SecretFields  []WorkflowSecretFieldView `json:"secretFields"`
+	Available     bool                      `json:"available"`
 }
 
 func (a *App) ListWorkflowNodeDefinitions() []WorkflowNodeDefinitionView {
 	descriptors := a.workflowNodeDescriptors()
 	items := make([]WorkflowNodeDefinitionView, 0, len(descriptors))
+	pluginNames := map[string]string{}
+	if a.Plugins != nil {
+		for _, plugin := range a.Plugins.Plugins() {
+			pluginNames[plugin.ID] = plugin.Name
+		}
+	}
 	for _, desc := range descriptors {
+		pluginID := ""
+		if a.Plugins != nil {
+			pluginID = a.Plugins.NodePlugin(desc.Type)
+		}
 		inputPorts, outputPorts := workflowPorts(desc)
 		available := desc.Type != "core.loop_item" && desc.Type != "core.loop_end"
 		items = append(items, WorkflowNodeDefinitionView{
-			EditorKey: desc.EditorKey, PluginID: a.Plugins.NodePlugin(desc.Type), Type: desc.Type, Version: desc.Version, Title: desc.Title,
-			Description: desc.Description, Kind: desc.Kind, Category: desc.Category,
+			EditorKey: desc.EditorKey, PluginID: pluginID, PluginName: pluginNames[pluginID], Type: desc.Type, Version: desc.Version, Title: desc.Title,
+			Description: desc.Description, Kind: desc.Kind, Category: desc.Category, CategoryTitle: desc.CategoryTitle,
 			Aliases: append([]string(nil), desc.Aliases...), Tags: append([]string(nil), desc.Tags...), SortOrder: desc.SortOrder,
 			Color: desc.Color, Icon: desc.Icon, Width: desc.Width, Height: desc.Height,
 			Capabilities: desc.Capabilities,
@@ -118,14 +130,14 @@ func coreWorkflowNodeDescriptors() []sdk.NodeDescriptor {
 		{
 			Type: "core.manual", Version: "1.0.0", Kind: sdk.NodeKindTrigger,
 			ConfigSchema: empty, UISchema: json.RawMessage(`{"ui:order":[]}`), InputSchema: empty,
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"triggeredAt":{"type":"string","format":"date-time"}},"required":["triggeredAt"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"triggeredAt":{"type":"string","format":"date-time","description":"使用 UTC 时间，接口采用 ISO 8601 格式。","title":"触发时间"}},"required":["triggeredAt"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 		{
 			Type: "core.schedule", Version: "1.0.0", Kind: sdk.NodeKindTrigger,
 			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"everySeconds":{"type":"integer","title":"执行间隔（秒）","minimum":60,"maximum":86400,"default":3600},"cronExpression":{"type":"string","title":"Cron 表达式","minLength":1,"maxLength":255},"timeZone":{"type":"string","title":"时区","minLength":1,"maxLength":255,"default":"Asia/Shanghai"}},"oneOf":[{"required":["everySeconds"]},{"required":["cronExpression","timeZone"]}],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["everySeconds","cronExpression","timeZone"]}`), InputSchema: empty,
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"triggeredAt":{"type":"string","format":"date-time"}},"required":["triggeredAt"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"triggeredAt":{"type":"string","format":"date-time","description":"使用 UTC 时间，接口采用 ISO 8601 格式。","title":"触发时间"}},"required":["triggeredAt"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 		{
@@ -139,7 +151,7 @@ func coreWorkflowNodeDescriptors() []sdk.NodeDescriptor {
 			Type: "core.constant", Version: "1.0.0", Kind: sdk.NodeKindAction,
 			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"string","title":"值","description":"该节点输出的值。"}},"required":["value"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["value"],"value":{"ui:widget":"textarea"}}`), InputSchema: empty,
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"string","title":"值"}},"required":["value"],"additionalProperties":false}`),
 			Pool:         sdk.PoolCompute, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 		{
@@ -150,10 +162,10 @@ func coreWorkflowNodeDescriptors() []sdk.NodeDescriptor {
 		},
 		{
 			Type: "core.human_approval", Version: "1.0.0", Kind: sdk.NodeKindAction,
-			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"decisionMode":{"type":"string","title":"决策方式","enum":["human","auto"],"default":"human"},"taskType":{"type":"string","title":"任务类型","minLength":1,"maxLength":64,"default":"approval"},"prompt":{"type":"string","title":"提示内容","maxLength":500,"default":"Review this workflow action."},"expiresSeconds":{"type":"integer","title":"有效时间（秒）","minimum":60,"maximum":604800,"default":86400}},"required":["taskType","prompt","expiresSeconds"],"additionalProperties":false}`),
+			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"decisionMode":{"type":"string","title":"决策方式","enum":["human","auto"],"default":"human","enumLabels":["人工审批","自动决策"]},"taskType":{"type":"string","title":"任务类型","minLength":1,"maxLength":64,"default":"approval"},"prompt":{"type":"string","title":"提示内容","maxLength":500,"default":"请审核本次工作流操作。"},"expiresSeconds":{"type":"integer","title":"有效时间（秒）","minimum":60,"maximum":604800,"default":86400}},"required":["taskType","prompt","expiresSeconds"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["decisionMode","taskType","prompt","expiresSeconds"]}`),
 			InputSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"businessKey":{"type":"string","title":"业务标识","minLength":1,"maxLength":256,"x-coinsphere-field-source":true}},"required":["businessKey"],"additionalProperties":false}`),
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"taskId":{"type":"integer"},"status":{"type":"string","enum":["approved","rejected","expired","superseded"]},"decidedAt":{"type":"string","format":"date-time"}},"required":["taskId","status","decidedAt"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"taskId":{"type":"integer","title":"待办编号"},"status":{"type":"string","enum":["approved","rejected","expired","superseded"],"title":"状态","enumLabels":["已通过","已拒绝","已过期","已被替代"]},"decidedAt":{"type":"string","format":"date-time","title":"处理时间","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"}},"required":["taskId","status","decidedAt"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectHumanAction, State: sdk.StateStateless,
 		},
 		{
@@ -161,20 +173,20 @@ func coreWorkflowNodeDescriptors() []sdk.NodeDescriptor {
 			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"maxIterations":{"type":"integer","title":"最大循环次数","minimum":1,"maximum":100,"default":10},"timeoutSeconds":{"type":"integer","title":"总超时时间（秒）","minimum":1,"maximum":86400,"default":60},"exitCondition":{"type":"string","title":"布尔退出条件","minLength":1,"maxLength":4096,"default":"input.iteration >= 1"},"body":{"type":"object","title":"内嵌流程","default":{"schemaVersion":3,"entryPoints":{"main":"item"},"nodes":[{"nodeInstanceId":"item","nodeType":"core.loop_item","nodeVersion":"1.0.0","config":{},"position":{"x":80,"y":80}},{"nodeInstanceId":"done","nodeType":"core.loop_end","nodeVersion":"1.0.0","config":{},"position":{"x":360,"y":80}}],"edges":[{"edgeId":"item-done","sourceNodeInstanceId":"item","sourcePort":"out","targetNodeInstanceId":"done","targetPort":"in"}]}}},"required":["maxIterations","timeoutSeconds","exitCondition","body"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["maxIterations","timeoutSeconds","exitCondition","body"],"exitCondition":{"ui:widget":"textarea"}}`),
 			InputSchema:  valueInput,
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iterations":{"type":"integer"},"exited":{"type":"boolean"},"value":{"type":"object"}},"required":["iterations","exited","value"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iterations":{"type":"integer","title":"循环次数"},"exited":{"type":"boolean","title":"已退出"},"value":{"type":"object","title":"值"}},"required":["iterations","exited","value"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 		{
 			Type: "core.loop_item", Version: "1.0.0", Kind: sdk.NodeKindAction,
 			ConfigSchema: empty, UISchema: json.RawMessage(`{"ui:order":[]}`),
-			InputSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iteration":{"type":"integer"},"value":{"type":"object"}},"additionalProperties":false}`),
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iteration":{"type":"integer"},"value":{"type":"object"}},"required":["iteration","value"],"additionalProperties":false}`),
+			InputSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iteration":{"type":"integer","title":"循环次数"},"value":{"type":"object","title":"值"}},"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"iteration":{"type":"integer","title":"循环次数"},"value":{"type":"object","title":"值"}},"required":["iteration","value"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 		{
 			Type: "core.loop_end", Version: "1.0.0", Kind: sdk.NodeKindAction,
 			ConfigSchema: empty, UISchema: json.RawMessage(`{"ui:order":[]}`), InputSchema: valueInput,
-			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"object"}},"required":["value"],"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"object","title":"值"}},"required":["value"],"additionalProperties":false}`),
 			Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNone, State: sdk.StateStateless,
 		},
 	}
@@ -198,6 +210,7 @@ func coreWorkflowNodeDescriptors() []sdk.NodeDescriptor {
 	for index := range items {
 		value := meta[items[index].Type]
 		items[index].Title, items[index].Description, items[index].Category = value.title, value.description, value.category
+		items[index].CategoryTitle = map[string]string{"start": "触发入口", "control": "流程控制", "data": "数据", "end": "结束"}[value.category]
 		items[index].Aliases, items[index].Tags, items[index].SortOrder = value.aliases, value.tags, value.sortOrder
 		items[index].Color, items[index].Icon = value.color, value.icon
 		items[index].Width, items[index].Height = 220, 72

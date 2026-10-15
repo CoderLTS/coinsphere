@@ -107,7 +107,7 @@ func authorizeWorkflowTx(tx *gorm.DB, p *Principal, id int64) error {
 		return err
 	}
 	if count != 1 {
-		return fmt.Errorf("%w: workflow", ErrNotFound)
+		return fmt.Errorf("%w：工作流", ErrNotFound)
 	}
 	return nil
 }

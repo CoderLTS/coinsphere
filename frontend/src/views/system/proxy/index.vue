@@ -1,6 +1,10 @@
 <!-- 系统代理池：仅供显式选择代理的 Binance 公共行情节点使用。 -->
 <template>
-  <div class="art-full-height">
+  <div class="proxy-page art-full-height">
+    <header class="workspace-heading"
+      ><h1>出站代理</h1><p>管理工作流节点显式选用的代理，保存后可检测连接。</p></header
+    >
+    <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <ElCard class="art-table-card">
       <ArtTableHeader
         v-model:columns="columnChecks"
@@ -23,7 +27,15 @@
       align-center
       destroy-on-close
     >
-      <ElForm ref="formRef" :model="form" :rules="rules" label-width="92px">
+      <ElAlert v-if="formError" :title="formError" type="error" :closable="false" />
+      <ElForm
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :disabled="submitting"
+        size="small"
+        label-position="top"
+      >
         <ElFormItem label="名称" prop="name">
           <ElInput v-model.trim="form.name" maxlength="120" placeholder="例如：新加坡节点" />
         </ElFormItem>
@@ -76,7 +88,7 @@
       </ElForm>
 
       <template #footer>
-        <ElButton @click="dialogVisible = false">取消</ElButton>
+        <ElButton :disabled="submitting" @click="dialogVisible = false">取消</ElButton>
         <ElButton type="primary" :loading="submitting" @click="submitProxy">保存</ElButton>
       </template>
     </ElDialog>
@@ -112,8 +124,11 @@
   type ProxyPayload = Api.System.OutboundProxyUpsertPayload
 
   const loading = ref(false)
+  const error = ref(''),
+    formError = ref('')
   const submitting = ref(false)
   const validatingId = ref<number | null>(null)
+  const updatingId = ref<number | null>(null)
   const proxies = ref<ProxyItem[]>([])
   const dialogVisible = ref(false)
   const editingProxy = ref<ProxyItem | null>(null)
@@ -162,7 +177,9 @@
       icon: options.icon,
       type: options.type,
       loading: options.loading,
+      disabled: updatingId.value !== null,
       title: options.title,
+      'aria-label': options.title,
       onClick: options.onClick
     })
 
@@ -227,6 +244,8 @@
       formatter: (row) =>
         h(ElSwitch, {
           modelValue: row.isEnabled,
+          loading: updatingId.value === row.id,
+          disabled: updatingId.value !== null,
           'onUpdate:modelValue': (value: boolean | string | number) =>
             setEnabled(row, Boolean(value))
         })
@@ -242,20 +261,25 @@
 
   const loadProxies = async () => {
     loading.value = true
+    error.value = ''
     try {
       proxies.value = await fetchGetOutboundProxies()
+    } catch (cause: any) {
+      error.value = cause.message
     } finally {
       loading.value = false
     }
   }
 
   const openCreate = () => {
+    formError.value = ''
     editingProxy.value = null
     Object.assign(form, emptyForm())
     dialogVisible.value = true
   }
 
   const openEdit = (row: ProxyItem) => {
+    formError.value = ''
     editingProxy.value = row
     Object.assign(form, {
       name: row.name,
@@ -272,7 +296,7 @@
 
   const submitProxy = async () => {
     if (!formRef.value || submitting.value) return
-    await formRef.value.validate()
+    if (!(await formRef.value.validate().catch(() => false))) return
     const payload: ProxyPayload = {
       name: form.name.trim(),
       protocol: form.protocol,
@@ -284,21 +308,29 @@
       isEnabled: form.isEnabled
     }
     submitting.value = true
+    formError.value = ''
     try {
       if (editingProxy.value) await fetchUpdateOutboundProxy(editingProxy.value.id, payload)
       else await fetchCreateOutboundProxy(payload)
       dialogVisible.value = false
       await loadProxies()
+    } catch (cause: any) {
+      formError.value = cause.message
     } finally {
       submitting.value = false
     }
   }
 
   const setEnabled = async (row: ProxyItem, enabled: boolean) => {
+    if (updatingId.value !== null) return
+    updatingId.value = row.id
     try {
       await fetchSetOutboundProxyEnabled(row.id, enabled)
-    } finally {
       await loadProxies()
+    } catch (cause: any) {
+      error.value = cause.message
+    } finally {
+      updatingId.value = null
     }
   }
 
@@ -310,19 +342,33 @@
       if (result.success) ElMessage.success(result.message)
       else ElMessage.error(result.message)
       await loadProxies()
+    } catch (cause: any) {
+      error.value = cause.message
     } finally {
       validatingId.value = null
     }
   }
 
   const deleteProxy = async (row: ProxyItem) => {
-    await ElMessageBox.confirm(`确认删除代理“${row.name}”吗？`, '删除代理', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-    await fetchDeleteOutboundProxy(row.id)
-    await loadProxies()
+    if (updatingId.value !== null) return
+    try {
+      await ElMessageBox.confirm(`确认删除代理“${row.name}”吗？`, '删除代理', {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      })
+    } catch {
+      return
+    }
+    updatingId.value = row.id
+    try {
+      await fetchDeleteOutboundProxy(row.id)
+      await loadProxies()
+    } catch (cause: any) {
+      error.value = cause.message
+    } finally {
+      updatingId.value = null
+    }
   }
 
   onMounted(loadProxies)

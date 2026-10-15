@@ -28,24 +28,9 @@ var (
 	quantDecimalPattern = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$`)
 )
 
-var quantIndicatorInputSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"eventTime":{"type":"string","title":"事件时间","format":"date-time"},"pathEntered":{"type":"boolean","title":"已进入上游路径","default":false}},"required":["eventTime"],"additionalProperties":false}`)
+var quantIndicatorInputSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"eventTime":{"type":"string","title":"事件时间","format":"date-time","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"},"pathEntered":{"type":"boolean","title":"已进入上游路径","default":false}},"required":["eventTime"],"additionalProperties":false}`)
 
-var quantIndicatorOutputSchema = json.RawMessage(`{
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "type":"object",
-  "properties":{
-    "ready":{"type":"boolean"},"matched":{"type":"boolean"},"previousMatched":{"type":"boolean"},
-    "branch":{"type":"string","enum":["true","false"]},"entered":{"type":"boolean"},"triggered":{"type":"boolean"},
-    "evaluatedAt":{"type":"string","format":"date-time"},"previousEvaluatedAt":{"type":"string","format":"date-time"},
-    "businessKey":{"type":"string","minLength":1,"maxLength":256},"summary":{"type":"string","minLength":1,"maxLength":2000},"formula":{"type":"string","minLength":1,"maxLength":2000},
-    "market":{"type":"string","enum":["spot","usdm"]},"instrument":{"type":"string","pattern":"^[A-Z0-9]{2,32}$"},
-    "indicator":{"type":"string"},"interval":{"type":"string"},
-    "candleCloseTime":{"type":"string"},"previousCandleCloseTime":{"type":"string"},
-    "value":{"type":"object","additionalProperties":{"type":"string"}},"previousValue":{"type":"object","additionalProperties":{"type":"string"}},"venue":{"type":"string"}
-  },
-  "required":["ready","matched","previousMatched","branch","entered","triggered","evaluatedAt","previousEvaluatedAt","businessKey","summary","formula","venue","market","instrument","indicator","interval","candleCloseTime","previousCandleCloseTime","value","previousValue"],
-  "additionalProperties":false
-}`)
+var quantIndicatorOutputSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"ready":{"type":"boolean","title":"是否就绪"},"matched":{"type":"boolean","title":"是否匹配"},"previousMatched":{"type":"boolean","title":"上次是否匹配"},"branch":{"type":"string","enum":["true","false"],"title":"分支","enumLabels":["是","否"]},"entered":{"type":"boolean","title":"是否进入"},"triggered":{"type":"boolean","title":"是否触发"},"evaluatedAt":{"type":"string","format":"date-time","title":"评估时间","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"},"previousEvaluatedAt":{"type":"string","format":"date-time","title":"上次评估时间","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"},"businessKey":{"type":"string","minLength":1,"maxLength":256,"title":"业务标识"},"summary":{"type":"string","minLength":1,"maxLength":2000,"title":"摘要"},"formula":{"type":"string","minLength":1,"maxLength":2000,"title":"计算公式"},"market":{"type":"string","enum":["spot","usdm"],"title":"市场","enumLabels":["现货","U 本位合约"]},"instrument":{"type":"string","pattern":"^[A-Z0-9]{2,32}$","title":"品种"},"indicator":{"type":"string","title":"指标"},"interval":{"type":"string","title":"K 线周期"},"candleCloseTime":{"type":"string","title":"K 线收盘时间"},"previousCandleCloseTime":{"type":"string","title":"上次 K 线收盘时间"},"value":{"type":"object","additionalProperties":{"type":"string"},"title":"值"},"previousValue":{"type":"object","additionalProperties":{"type":"string"},"title":"上次数值"},"venue":{"type":"string","title":"交易所"}},"required":["ready","matched","previousMatched","branch","entered","triggered","evaluatedAt","previousEvaluatedAt","businessKey","summary","formula","venue","market","instrument","indicator","interval","candleCloseTime","previousCandleCloseTime","value","previousValue"],"additionalProperties":false}`)
 
 type quantIndicatorDefinition struct {
 	NodeType  string
@@ -64,12 +49,12 @@ var quantIndicatorDefinitions = []quantIndicatorDefinition{
 }
 
 var quantIndicatorParameterSchemas = map[string]string{
-	"volume_spike": `{"type":"object","title":"参数","properties":{"lookback":{"type":"integer","title":"均量周期","minimum":1,"maximum":500,"default":20},"multiplier":{"type":"string","title":"放量倍数","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"2","x-coinsphere-decimal":true}},"required":["lookback","multiplier"],"additionalProperties":false,"default":{"lookback":20,"multiplier":"2"}}`,
-	"price_change": `{"type":"object","title":"参数","properties":{"lookback":{"type":"integer","title":"K 线数量","minimum":1,"maximum":500,"default":1},"mode":{"type":"string","title":"判断方式","enum":["rise","fall","absolute","amplitude","since_day_start"],"enumLabels":["上涨","下跌","绝对涨跌幅","最高最低振幅","当日涨跌幅(UTC+0)"],"default":"absolute"},"threshold":{"type":"string","title":"阈值（%）","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"1","x-coinsphere-decimal":true}},"required":["lookback","mode","threshold"],"additionalProperties":false,"default":{"lookback":1,"mode":"absolute","threshold":"1"}}`,
+	"volume_spike": `{"type":"object","title":"参数","properties":{"lookback":{"type":"integer","title":"均量周期","minimum":1,"maximum":500,"default":20},"multiplier":{"type":"string","title":"放量倍数","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"2","x-coinsphere-decimal":true,"description":"使用十进制字符串，避免浮点精度损失。"}},"required":["lookback","multiplier"],"additionalProperties":false,"default":{"lookback":20,"multiplier":"2"}}`,
+	"price_change": `{"type":"object","title":"参数","properties":{"lookback":{"type":"integer","title":"K 线数量","minimum":1,"maximum":500,"default":1},"mode":{"type":"string","title":"判断方式","enum":["rise","fall","absolute","amplitude","since_day_start"],"enumLabels":["上涨","下跌","绝对涨跌幅","最高最低振幅","当日涨跌幅(UTC+0)"],"default":"absolute"},"threshold":{"type":"string","title":"阈值（%）","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"1","x-coinsphere-decimal":true,"description":"使用十进制字符串，避免浮点精度损失。"}},"required":["lookback","mode","threshold"],"additionalProperties":false,"default":{"lookback":1,"mode":"absolute","threshold":"1"}}`,
 	"macd":         `{"type":"object","title":"参数","properties":{"fastPeriod":{"type":"integer","title":"快线周期","minimum":1,"maximum":100,"default":12},"slowPeriod":{"type":"integer","title":"慢线周期","minimum":2,"maximum":200,"default":26},"signalPeriod":{"type":"integer","title":"信号周期","minimum":1,"maximum":100,"default":9},"signal":{"type":"string","title":"判断规则","enum":["golden_cross","death_cross","dif_above_zero","dif_below_zero"],"enumLabels":["金叉","死叉","DIF 位于零轴上方","DIF 位于零轴下方"],"default":"golden_cross"}},"required":["fastPeriod","slowPeriod","signalPeriod","signal"],"additionalProperties":false,"default":{"fastPeriod":12,"slowPeriod":26,"signalPeriod":9,"signal":"golden_cross"}}`,
-	"kdj":          `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":200,"default":9},"kSmoothing":{"type":"integer","title":"K 平滑周期","minimum":1,"maximum":50,"default":3},"dSmoothing":{"type":"integer","title":"D 平滑周期","minimum":1,"maximum":50,"default":3},"signal":{"type":"string","title":"判断规则","enum":["golden_cross","death_cross","k_above","k_below","d_above","d_below","j_above","j_below"],"enumLabels":["K/D 金叉","K/D 死叉","K 高于阈值","K 低于阈值","D 高于阈值","D 低于阈值","J 高于阈值","J 低于阈值"],"default":"golden_cross"},"threshold":{"type":"string","title":"阈值","pattern":"^-?[0-9]+(?:\\.[0-9]+)?$","default":"80","x-coinsphere-decimal":true}},"required":["period","kSmoothing","dSmoothing","signal","threshold"],"additionalProperties":false,"default":{"period":9,"kSmoothing":3,"dSmoothing":3,"signal":"golden_cross","threshold":"80"}}`,
-	"rsi":          `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":200,"default":14},"direction":{"type":"string","title":"判断规则","enum":["above","below"],"enumLabels":["高于阈值","低于阈值"],"default":"below"},"threshold":{"type":"string","title":"阈值","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"30","x-coinsphere-decimal":true}},"required":["period","direction","threshold"],"additionalProperties":false,"default":{"period":14,"direction":"below","threshold":"30"}}`,
-	"bollinger":    `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":500,"default":20},"multiplier":{"type":"string","title":"标准差倍数","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"2","x-coinsphere-decimal":true},"signal":{"type":"string","title":"判断规则","enum":["close_above_upper","close_below_lower"],"enumLabels":["收盘价突破上轨","收盘价跌破下轨"],"default":"close_above_upper"}},"required":["period","multiplier","signal"],"additionalProperties":false,"default":{"period":20,"multiplier":"2","signal":"close_above_upper"}}`,
+	"kdj":          `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":200,"default":9},"kSmoothing":{"type":"integer","title":"K 平滑周期","minimum":1,"maximum":50,"default":3},"dSmoothing":{"type":"integer","title":"D 平滑周期","minimum":1,"maximum":50,"default":3},"signal":{"type":"string","title":"判断规则","enum":["golden_cross","death_cross","k_above","k_below","d_above","d_below","j_above","j_below"],"enumLabels":["K/D 金叉","K/D 死叉","K 高于阈值","K 低于阈值","D 高于阈值","D 低于阈值","J 高于阈值","J 低于阈值"],"default":"golden_cross"},"threshold":{"type":"string","title":"阈值","pattern":"^-?[0-9]+(?:\\.[0-9]+)?$","default":"80","x-coinsphere-decimal":true,"description":"使用十进制字符串，避免浮点精度损失。"}},"required":["period","kSmoothing","dSmoothing","signal","threshold"],"additionalProperties":false,"default":{"period":9,"kSmoothing":3,"dSmoothing":3,"signal":"golden_cross","threshold":"80"}}`,
+	"rsi":          `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":200,"default":14},"direction":{"type":"string","title":"判断规则","enum":["above","below"],"enumLabels":["高于阈值","低于阈值"],"default":"below"},"threshold":{"type":"string","title":"阈值","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"30","x-coinsphere-decimal":true,"description":"使用十进制字符串，避免浮点精度损失。"}},"required":["period","direction","threshold"],"additionalProperties":false,"default":{"period":14,"direction":"below","threshold":"30"}}`,
+	"bollinger":    `{"type":"object","title":"参数","properties":{"period":{"type":"integer","title":"周期","minimum":2,"maximum":500,"default":20},"multiplier":{"type":"string","title":"标准差倍数","pattern":"^[0-9]+(?:\\.[0-9]+)?$","default":"2","x-coinsphere-decimal":true,"description":"使用十进制字符串，避免浮点精度损失。"},"signal":{"type":"string","title":"判断规则","enum":["close_above_upper","close_below_lower"],"enumLabels":["收盘价突破上轨","收盘价跌破下轨"],"default":"close_above_upper"}},"required":["period","multiplier","signal"],"additionalProperties":false,"default":{"period":20,"multiplier":"2","signal":"close_above_upper"}}`,
 }
 
 func quantIndicatorConfigSchema(indicator string) json.RawMessage {
@@ -129,7 +114,7 @@ func (a quantIndicatorAction) Execute(ctx context.Context, request sdk.ActionReq
 		PathEntered bool   `json:"pathEntered"`
 	}
 	if !decodeQuantStrict(request.Input, &input) {
-		return sdk.ActionResult{}, errors.New("quant indicator condition input is invalid")
+		return sdk.ActionResult{}, errors.New("量化指标条件输入无效")
 	}
 	evaluatedAt, err := parseQuantUTCTime(input.EventTime)
 	if err != nil {
@@ -153,7 +138,7 @@ func (a quantIndicatorAction) Execute(ctx context.Context, request sdk.ActionReq
 			return sdk.ActionResult{}, err
 		}
 		if !candles[len(candles)-1].CloseTime.Add(duration).After(evaluatedAt) {
-			return sdk.ActionResult{}, errors.New("quant indicator candles are stale")
+			return sdk.ActionResult{}, errors.New("量化指标的 K 线数据已过期")
 		}
 	}
 	current, err := evaluateQuantIndicatorLeaf(leaf, quantCandlesAt(candles, evaluatedAt, lookback))
@@ -211,7 +196,7 @@ func parseQuantIndicatorConfig(raw json.RawMessage, indicator string) (quantIndi
 		Parameters    json.RawMessage `json:"parameters"`
 	}
 	if !decodeQuantStrict(raw, &payload) {
-		return quantIndicatorConfig{}, errors.New("quant indicator condition configuration is invalid")
+		return quantIndicatorConfig{}, errors.New("量化指标条件配置无效")
 	}
 	series, err := parseQuantSeriesConfig(mustMarshal(map[string]any{
 		"venue": payload.Venue, "market": payload.Market, "instrument": payload.Instrument, "interval": payload.CheckInterval,
@@ -221,10 +206,10 @@ func parseQuantIndicatorConfig(raw json.RawMessage, indicator string) (quantIndi
 	}
 	payload.Name = strings.TrimSpace(payload.Name)
 	if payload.Name == "" || utf8.RuneCountInString(payload.Name) > 80 {
-		return quantIndicatorConfig{}, errors.New("quant indicator condition name is invalid")
+		return quantIndicatorConfig{}, errors.New("量化指标条件名称无效")
 	}
 	if _, ok := quantIntervals[payload.Interval]; !ok {
-		return quantIndicatorConfig{}, errors.New("quant indicator interval is unsupported")
+		return quantIndicatorConfig{}, errors.New("不支持此量化指标周期")
 	}
 	parameters, err := parseQuantIndicatorParameters(indicator, payload.Parameters)
 	if err != nil {
@@ -243,11 +228,11 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 			Multiplier string `json:"multiplier"`
 		}{Lookback: 20, Multiplier: "2"}
 		if !decodeQuantStrict(raw, &value) || value.Lookback < 1 || value.Lookback > 500 {
-			return parameters, errors.New("volume spike parameters are invalid")
+			return parameters, errors.New("成交量突增参数无效")
 		}
 		multiplier, err := parseQuantConditionDecimal(value.Multiplier, decimal.Zero, decimal.NewFromInt(1000), false)
 		if err != nil {
-			return parameters, errors.New("volume spike multiplier is invalid")
+			return parameters, errors.New("成交量突增倍数无效")
 		}
 		parameters.Lookback, parameters.Multiplier = value.Lookback, multiplier
 	case "price_change":
@@ -258,11 +243,11 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 		}{Lookback: 5, Mode: "absolute", Threshold: "5"}
 		if !decodeQuantStrict(raw, &value) || value.Lookback < 1 || value.Lookback > 500 ||
 			value.Mode != "rise" && value.Mode != "fall" && value.Mode != "absolute" && value.Mode != "amplitude" && value.Mode != "since_day_start" {
-			return parameters, errors.New("price change parameters are invalid")
+			return parameters, errors.New("价格变化参数无效")
 		}
 		threshold, err := parseQuantConditionDecimal(value.Threshold, decimal.Zero, decimal.NewFromInt(10000), true)
 		if err != nil {
-			return parameters, errors.New("price change threshold is invalid")
+			return parameters, errors.New("价格变化阈值无效")
 		}
 		parameters.Lookback, parameters.Mode, parameters.Threshold = value.Lookback, value.Mode, threshold
 	case "macd":
@@ -274,7 +259,7 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 		}{FastPeriod: 12, SlowPeriod: 26, SignalPeriod: 9, Signal: "golden_cross"}
 		if !decodeQuantStrict(raw, &value) || value.FastPeriod < 1 || value.FastPeriod > 100 || value.SlowPeriod <= value.FastPeriod || value.SlowPeriod > 200 || value.SignalPeriod < 1 || value.SignalPeriod > 100 ||
 			value.Signal != "golden_cross" && value.Signal != "death_cross" && value.Signal != "dif_above_zero" && value.Signal != "dif_below_zero" {
-			return parameters, errors.New("MACD parameters are invalid")
+			return parameters, errors.New("MACD 参数无效")
 		}
 		parameters.FastPeriod, parameters.SlowPeriod, parameters.SignalPeriod, parameters.Signal = value.FastPeriod, value.SlowPeriod, value.SignalPeriod, value.Signal
 	case "kdj":
@@ -286,11 +271,11 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 			Threshold  string `json:"threshold"`
 		}{Period: 9, KSmoothing: 3, DSmoothing: 3, Signal: "golden_cross", Threshold: "80"}
 		if !decodeQuantStrict(raw, &value) || value.Period < 2 || value.Period > 200 || value.KSmoothing < 1 || value.KSmoothing > 50 || value.DSmoothing < 1 || value.DSmoothing > 50 || !quantKDJSignal(value.Signal) {
-			return parameters, errors.New("KDJ parameters are invalid")
+			return parameters, errors.New("KDJ 参数无效")
 		}
 		threshold, err := parseQuantConditionDecimal(value.Threshold, decimal.NewFromInt(-1000), decimal.NewFromInt(1000), true)
 		if err != nil {
-			return parameters, errors.New("KDJ threshold is invalid")
+			return parameters, errors.New("KDJ 阈值无效")
 		}
 		parameters.Period, parameters.KSmoothing, parameters.DSmoothing = value.Period, value.KSmoothing, value.DSmoothing
 		parameters.Signal, parameters.Threshold = value.Signal, threshold
@@ -301,11 +286,11 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 			Threshold string `json:"threshold"`
 		}{Period: 14, Direction: "below", Threshold: "30"}
 		if !decodeQuantStrict(raw, &value) || value.Period < 2 || value.Period > 200 || value.Direction != "above" && value.Direction != "below" {
-			return parameters, errors.New("RSI parameters are invalid")
+			return parameters, errors.New("RSI 参数无效")
 		}
 		threshold, err := parseQuantConditionDecimal(value.Threshold, decimal.Zero, quantHundred, true)
 		if err != nil {
-			return parameters, errors.New("RSI threshold is invalid")
+			return parameters, errors.New("RSI 阈值无效")
 		}
 		parameters.Period, parameters.Mode, parameters.Threshold = value.Period, value.Direction, threshold
 	case "bollinger":
@@ -315,15 +300,15 @@ func parseQuantIndicatorParameters(indicator string, raw json.RawMessage) (quant
 			Signal     string `json:"signal"`
 		}{Period: 20, Multiplier: "2", Signal: "close_above_upper"}
 		if !decodeQuantStrict(raw, &value) || value.Period < 2 || value.Period > 500 || value.Signal != "close_above_upper" && value.Signal != "close_below_lower" {
-			return parameters, errors.New("Bollinger parameters are invalid")
+			return parameters, errors.New("布林带参数无效")
 		}
 		multiplier, err := parseQuantConditionDecimal(value.Multiplier, decimal.Zero, decimal.NewFromInt(20), false)
 		if err != nil {
-			return parameters, errors.New("Bollinger multiplier is invalid")
+			return parameters, errors.New("布林带倍数无效")
 		}
 		parameters.Period, parameters.StandardDeviation, parameters.Signal = value.Period, multiplier, value.Signal
 	default:
-		return parameters, errors.New("quant indicator type is unsupported")
+		return parameters, errors.New("不支持此量化指标类型")
 	}
 	return parameters, nil
 }
@@ -339,11 +324,11 @@ func decodeQuantStrict(raw json.RawMessage, destination any) bool {
 
 func parseQuantConditionDecimal(raw string, minimum, maximum decimal.Decimal, allowMinimum bool) (decimal.Decimal, error) {
 	if !quantDecimalPattern.MatchString(raw) {
-		return decimal.Zero, errors.New("invalid Decimal")
+		return decimal.Zero, errors.New("十进制数值无效")
 	}
 	value, err := decimal.NewFromString(raw)
 	if err != nil || value.GreaterThan(maximum) || allowMinimum && value.LessThan(minimum) || !allowMinimum && !value.GreaterThan(minimum) {
-		return decimal.Zero, errors.New("Decimal is outside limits")
+		return decimal.Zero, errors.New("十进制数值超出允许范围")
 	}
 	return value, nil
 }
@@ -465,7 +450,7 @@ func evaluateQuantIndicatorLeaf(leaf *quantIndicatorLeaf, candles []quantCandle)
 	case "macd":
 		differences, signals := quantMACD(candles, p.FastPeriod, p.SlowPeriod, p.SignalPeriod)
 		if len(differences) == 0 {
-			return quantIndicatorPoint{}, errors.New("MACD lookback is invalid")
+			return quantIndicatorPoint{}, errors.New("MACD 回看周期无效")
 		}
 		dif := differences[len(differences)-1]
 		dea := decimal.Zero
@@ -487,7 +472,7 @@ func evaluateQuantIndicatorLeaf(leaf *quantIndicatorLeaf, candles []quantCandle)
 	case "kdj":
 		ks, ds, js := quantKDJ(candles, p.Period, p.KSmoothing, p.DSmoothing)
 		if len(ks) == 0 {
-			return quantIndicatorPoint{}, errors.New("KDJ lookback is invalid")
+			return quantIndicatorPoint{}, errors.New("KDJ 回看周期无效")
 		}
 		k, d, j := ks[len(ks)-1], ds[len(ds)-1], js[len(js)-1]
 		switch p.Signal {
@@ -531,7 +516,7 @@ func evaluateQuantIndicatorLeaf(leaf *quantIndicatorLeaf, candles []quantCandle)
 		point.Values = map[string]string{"close": closeValue.String(), "middle": middle.String(), "upper": upper.String(), "lower": lower.String()}
 		point.Summary = fmt.Sprintf("%s：收盘 %s，上轨 %s，下轨 %s", leaf.Name, closeValue.String(), upper.String(), lower.String())
 	default:
-		return quantIndicatorPoint{}, errors.New("quant indicator is unsupported")
+		return quantIndicatorPoint{}, errors.New("不支持此量化指标")
 	}
 	return point, nil
 }

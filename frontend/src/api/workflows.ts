@@ -112,6 +112,7 @@ export interface WorkflowSecretField {
 
 export interface WorkflowNodeDefinition {
   pluginId?: string
+  pluginName?: string
   editorKey?: string
   type: string
   version: string
@@ -119,6 +120,7 @@ export interface WorkflowNodeDefinition {
   description: string
   kind: 'action' | 'trigger'
   category: string
+  categoryTitle?: string
   aliases?: string[]
   tags?: string[]
   sortOrder: number
@@ -149,6 +151,8 @@ export interface WorkflowSecretChange {
 }
 
 export interface WorkflowRun {
+  workflowName?: string
+  revisionNumber?: number
   id: number
   workflowId: number
   revisionId: number
@@ -229,6 +233,8 @@ export interface WorkflowRunDetail extends WorkflowRun {
 }
 
 export interface WorkflowHumanTask {
+  workflowName?: string
+  nodeName?: string
   id: number
   workflowId: number
   runId: number
@@ -247,6 +253,7 @@ interface ItemList<T> {
 }
 
 export interface WorkflowRunQuery {
+  workflowId?: number
   cursor?: string
   limit?: number
   triggerType?: WorkflowRun['triggerType'] | string
@@ -257,6 +264,9 @@ export interface WorkflowRunQuery {
 }
 
 export interface WorkflowSummary extends WorkflowItem {
+  draftRevisionNumber?: number
+  publishedRevisionNumber?: number
+  latestRunTriggeredAt?: string
   latestRunId?: number
   latestRunStatus?: WorkflowRun['status']
   maxConcurrentRuns: number
@@ -342,10 +352,20 @@ export const assignWorkflowGroup = (workflowIds: number[], groupId: number | nul
     data: { workflowIds, groupId }
   })
 
+export interface WorkflowValidationIssue {
+  scope: 'graph' | 'node' | 'edge'
+  level: 'error'
+  code: string
+  message: string
+  nodeInstanceId?: string
+  edgeId?: string
+  fieldPath?: string[]
+}
+
 export const validateWorkflowGraph = (graph: WorkflowGraph) =>
   request.post<{
     valid: boolean
-    issues: { scope: 'graph'; level: 'error'; message: string }[]
+    issues: WorkflowValidationIssue[]
   }>({ url: '/api/v1/workflows/validate', params: { graph } })
 
 export const createWorkflow = (params: {
@@ -390,19 +410,27 @@ export const createWorkflowRun = (
     showErrorMessage
   })
 
-export const fetchWorkflowRuns = (workflowId: number, params: WorkflowRunQuery = {}) =>
+export const fetchWorkflowRuns = (workflowId: number | undefined, params: WorkflowRunQuery = {}) =>
   request.get<Api.Common.PaginatedResponse<WorkflowRun>>({
-    url: `/api/v1/workflows/${workflowId}/runs`,
+    url: workflowId ? `/api/v1/workflows/${workflowId}/runs` : '/api/v1/workflow-runs',
     params
   })
 
 export const applyWorkflowRunAction = (runId: number, action: 'cancel' | 'retry' | 'replay') =>
   request.post<WorkflowRun>({ url: `/api/v1/workflow-runs/${runId}`, params: { action } })
 
-export const fetchWorkflowHumanTasks = (status = 'pending') =>
-  request.get<ItemList<WorkflowHumanTask>>({
+export const fetchWorkflowHumanTasks = (
+  params: {
+    status?: string
+    workflowId?: number
+    runId?: number
+    cursor?: string
+    limit?: number
+  } = { status: 'pending' }
+) =>
+  request.get<Api.Common.PaginatedResponse<WorkflowHumanTask>>({
     url: '/api/v1/human-tasks',
-    params: status ? { status } : {}
+    params
   })
 
 export const decideWorkflowHumanTask = (taskId: number, action: 'approve' | 'reject') =>

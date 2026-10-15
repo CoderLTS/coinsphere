@@ -40,7 +40,7 @@ func registerRoutes(registrar sdk.Registrar, runtime *binanceRuntime) error {
 
 func (q *binanceRuntime) handleOrders(c *gin.Context, scope sdk.RouteScope) {
 	if !validSystemScope(scope) {
-		writeProblem(c, http.StatusForbidden, "invalid Binance scope")
+		writeProblem(c, http.StatusForbidden, "币安查询范围无效")
 		return
 	}
 	query := sdk.ScopeWorkflows(q.db.WithContext(c.Request.Context()), scope, "workflow_id").Order("created_at DESC, id DESC").Limit(queryLimit(c, 100, 500))
@@ -52,7 +52,7 @@ func (q *binanceRuntime) handleOrders(c *gin.Context, scope sdk.RouteScope) {
 	}
 	var rows []tradingOrder
 	if err := query.Find(&rows).Error; err != nil {
-		writeProblem(c, http.StatusInternalServerError, "list Binance orders failed")
+		writeProblem(c, http.StatusInternalServerError, "读取币安订单列表失败")
 		return
 	}
 	items := make([]json.RawMessage, len(rows))
@@ -64,7 +64,7 @@ func (q *binanceRuntime) handleOrders(c *gin.Context, scope sdk.RouteScope) {
 
 func (q *binanceRuntime) handleInstruments(c *gin.Context, scope sdk.RouteScope) {
 	if !validSystemScope(scope) {
-		writeProblem(c, http.StatusForbidden, "invalid Binance scope")
+		writeProblem(c, http.StatusForbidden, "币安查询范围无效")
 		return
 	}
 	limit := queryLimit(c, 500, 10000)
@@ -82,22 +82,22 @@ func (q *binanceRuntime) handleInstruments(c *gin.Context, scope sdk.RouteScope)
 
 func (q *binanceRuntime) handleCandles(c *gin.Context, scope sdk.RouteScope) {
 	if !validSystemScope(scope) || !binanceQueryKeys(c, "market", "instrument", "interval", "before", "startTime", "endTime", "limit") {
-		writeProblem(c, http.StatusForbidden, "invalid Binance scope")
+		writeProblem(c, http.StatusForbidden, "币安查询范围无效")
 		return
 	}
 	before, err := parseOptionalUTCTime(c.Query("before"))
 	if err != nil {
-		writeProblem(c, http.StatusBadRequest, "before must use RFC3339 UTC")
+		writeProblem(c, http.StatusBadRequest, "截止时间须为 RFC3339 格式的 UTC 时间")
 		return
 	}
 	startTime, err := parseOptionalUTCTime(c.Query("startTime"))
 	if err != nil {
-		writeProblem(c, http.StatusBadRequest, "startTime must use RFC3339 UTC")
+		writeProblem(c, http.StatusBadRequest, "开始时间须为 RFC3339 格式的 UTC 时间")
 		return
 	}
 	endTime, err := parseOptionalUTCTime(c.Query("endTime"))
 	if err != nil {
-		writeProblem(c, http.StatusBadRequest, "endTime must use RFC3339 UTC")
+		writeProblem(c, http.StatusBadRequest, "结束时间须为 RFC3339 格式的 UTC 时间")
 		return
 	}
 	if !before.IsZero() {
@@ -163,7 +163,7 @@ func parseOptionalUTCTime(raw string) (time.Time, error) {
 	}
 	_, offset := value.Zone()
 	if offset != 0 {
-		return time.Time{}, errors.New("time must use UTC")
+		return time.Time{}, errors.New("时间须使用 UTC")
 	}
 	return value.UTC(), nil
 }
@@ -183,7 +183,7 @@ func binanceQueryKeys(c *gin.Context, allowed ...string) bool {
 
 func (q *binanceRuntime) handleIndicators(c *gin.Context, scope sdk.RouteScope) {
 	if !validSystemScope(scope) || !binanceQueryKeys(c, "market", "instrument", "interval", "startTime", "endTime", "limit", "maPeriods", "emaPeriods", "bollPeriod", "bollMultiplier", "macdFast", "macdSlow", "macdSignal", "rsiPeriod", "kdjPeriod", "kdjK", "kdjD", "wrPeriod") {
-		writeProblem(c, http.StatusBadRequest, "invalid Binance indicator query")
+		writeProblem(c, http.StatusBadRequest, "币安指标查询无效")
 		return
 	}
 	indicatorConfig, err := parseBinanceIndicatorConfig(c.Request)
@@ -193,12 +193,12 @@ func (q *binanceRuntime) handleIndicators(c *gin.Context, scope sdk.RouteScope) 
 	}
 	startTime, err := parseOptionalUTCTime(c.Query("startTime"))
 	if err != nil {
-		writeProblem(c, http.StatusBadRequest, "startTime must use RFC3339 UTC")
+		writeProblem(c, http.StatusBadRequest, "开始时间须为 RFC3339 格式的 UTC 时间")
 		return
 	}
 	endTime, err := parseOptionalUTCTime(c.Query("endTime"))
 	if err != nil {
-		writeProblem(c, http.StatusBadRequest, "endTime must use RFC3339 UTC")
+		writeProblem(c, http.StatusBadRequest, "结束时间须为 RFC3339 格式的 UTC 时间")
 		return
 	}
 	items, err := (marketDataProvider{runtime: q}).Candles(c.Request.Context(), trading.CandleQuery{Market: c.Query("market"), Instrument: c.Query("instrument"), Interval: c.Query("interval"), StartTime: startTime, EndTime: endTime, Limit: queryLimit(c, 500, 1_000_001)})
@@ -218,7 +218,7 @@ func parseBinanceIndicatorConfig(r *http.Request) (binanceIndicatorConfig, error
 		}
 		value, err := strconv.Atoi(raw)
 		if err != nil || value < min || value > max {
-			return errors.New("invalid Binance indicator parameter: " + key)
+			return errors.New("币安指标参数无效：" + key)
 		}
 		*target = value
 		return nil
@@ -230,12 +230,12 @@ func parseBinanceIndicatorConfig(r *http.Request) (binanceIndicatorConfig, error
 		}
 		parts := strings.Split(raw, ",")
 		if len(parts) != len(target) {
-			return errors.New("invalid Binance indicator parameter: " + key)
+			return errors.New("币安指标参数无效：" + key)
 		}
 		for index, part := range parts {
 			value, err := strconv.Atoi(strings.TrimSpace(part))
 			if err != nil || value < 1 || value > 120 {
-				return errors.New("invalid Binance indicator parameter: " + key)
+				return errors.New("币安指标参数无效：" + key)
 			}
 			target[index] = value
 		}
@@ -259,12 +259,12 @@ func parseBinanceIndicatorConfig(r *http.Request) (binanceIndicatorConfig, error
 	if raw := strings.TrimSpace(r.URL.Query().Get("bollMultiplier")); raw != "" {
 		value, err := decimal.NewFromString(raw)
 		if err != nil || value.LessThanOrEqual(decimal.Zero) || value.GreaterThan(decimal.NewFromInt(10)) {
-			return config, errors.New("invalid Binance indicator parameter: bollMultiplier")
+			return config, errors.New("币安布林带倍数参数无效")
 		}
 		config.BollMultiplier = value
 	}
 	if config.MACDFast >= config.MACDSlow {
-		return config, errors.New("macdFast must be smaller than macdSlow")
+		return config, errors.New("MACD 快线周期须小于慢线周期")
 	}
 	return config, nil
 }
@@ -318,16 +318,16 @@ func binanceOriginPort(value *url.URL, scheme string) (string, bool) {
 
 func (q *binanceRuntime) handleCandleStream(c *gin.Context, scope sdk.RouteScope) {
 	if !validSystemScope(scope) || !binanceQueryKeys(c, "market", "instrument", "interval", "maPeriods", "emaPeriods", "bollPeriod", "bollMultiplier", "macdFast", "macdSlow", "macdSignal", "rsiPeriod", "kdjPeriod", "kdjK", "kdjD", "wrPeriod") {
-		writeProblem(c, http.StatusForbidden, "invalid Binance scope")
+		writeProblem(c, http.StatusForbidden, "币安查询范围无效")
 		return
 	}
 	market, instrument, interval := strings.ToLower(strings.TrimSpace(c.Query("market"))), strings.ToUpper(strings.TrimSpace(c.Query("instrument"))), strings.TrimSpace(c.Query("interval"))
 	if market != "spot" && market != "usdm" || !instrumentPattern.MatchString(instrument) {
-		writeProblem(c, http.StatusBadRequest, "invalid Binance candle stream parameters")
+		writeProblem(c, http.StatusBadRequest, "币安 K 线订阅参数无效")
 		return
 	}
 	if _, ok := binanceIntervals[interval]; !ok {
-		writeProblem(c, http.StatusBadRequest, "unsupported Binance candle interval")
+		writeProblem(c, http.StatusBadRequest, "不支持此币安 K 线周期")
 		return
 	}
 	indicatorConfig, err := parseBinanceIndicatorConfig(c.Request)

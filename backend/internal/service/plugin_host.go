@@ -39,7 +39,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 			items, err := a.ListInstalledPlugins()
 			return platformJSON(map[string]any{"items": items}, err)
 		})
-	add("list_workflows", "按状态查询最近的平台工作流。", json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["inactive","active","error"]},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}},"additionalProperties":false}`),
+	add("list_workflows", "按状态查询最近的平台工作流。", json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["inactive","active","error"],"title":"状态","enumLabels":["未启用","已启用","错误"]},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20,"title":"返回数量"}},"additionalProperties":false}`),
 		func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				Status string `json:"status"`
@@ -52,7 +52,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				input.Limit = 20
 			}
 			if input.Limit < 1 || input.Limit > 100 {
-				return nil, errors.New("limit must be between 1 and 100")
+				return nil, errors.New("返回数量须为 1 至 100")
 			}
 			items, err := a.ListWorkflows(ctx, input.Status)
 			if len(items) > input.Limit {
@@ -60,7 +60,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 			}
 			return platformJSON(map[string]any{"items": items}, err)
 		})
-	add("list_workflow_revisions", "查询指定工作流最近的修订摘要。", json.RawMessage(`{"type":"object","properties":{"workflowId":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}},"required":["workflowId"],"additionalProperties":false}`),
+	add("list_workflow_revisions", "查询指定工作流最近的修订摘要。", json.RawMessage(`{"type":"object","properties":{"workflowId":{"type":"integer","minimum":1,"title":"工作流编号"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20,"title":"返回数量"}},"required":["workflowId"],"additionalProperties":false}`),
 		func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				WorkflowID int64 `json:"workflowId"`
@@ -70,13 +70,13 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				return nil, err
 			}
 			if input.WorkflowID <= 0 {
-				return nil, errors.New("workflowId must be positive")
+				return nil, errors.New("工作流编号须为正整数")
 			}
 			if input.Limit == 0 {
 				input.Limit = 20
 			}
 			if input.Limit < 1 || input.Limit > 50 {
-				return nil, errors.New("limit must be between 1 and 50")
+				return nil, errors.New("返回数量须为 1 至 50")
 			}
 			if err := a.AuthorizeWorkflow(ctx, input.WorkflowID); err != nil {
 				return nil, err
@@ -91,7 +91,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				Order("revision_number DESC").Limit(input.Limit).Find(&rows).Error
 			return platformJSON(map[string]any{"items": rows}, err)
 		})
-	add("list_workflow_runs", "查询指定工作流最近的运行状态摘要。", json.RawMessage(`{"type":"object","properties":{"workflowId":{"type":"integer","minimum":1},"status":{"type":"string","maxLength":32},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}},"required":["workflowId"],"additionalProperties":false}`),
+	add("list_workflow_runs", "查询指定工作流最近的运行状态摘要。", json.RawMessage(`{"type":"object","properties":{"workflowId":{"type":"integer","minimum":1,"title":"工作流编号"},"status":{"type":"string","maxLength":32,"title":"状态"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20,"title":"返回数量"}},"required":["workflowId"],"additionalProperties":false}`),
 		func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				WorkflowID int64  `json:"workflowId"`
@@ -102,13 +102,13 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				return nil, err
 			}
 			if input.WorkflowID <= 0 {
-				return nil, errors.New("workflowId must be positive")
+				return nil, errors.New("工作流编号须为正整数")
 			}
 			if input.Limit == 0 {
 				input.Limit = 20
 			}
 			if input.Limit < 1 || input.Limit > 50 {
-				return nil, errors.New("limit must be between 1 and 50")
+				return nil, errors.New("返回数量须为 1 至 50")
 			}
 			if err := a.AuthorizeWorkflow(ctx, input.WorkflowID); err != nil {
 				return nil, err
@@ -128,7 +128,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 			err := query.Order("id DESC").Limit(input.Limit).Find(&rows).Error
 			return platformJSON(map[string]any{"items": rows}, err)
 		})
-	add("list_human_tasks", "查询最近的工作流人工任务。", json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["pending","approved","rejected","expired","superseded"]},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}},"additionalProperties":false}`),
+	add("list_human_tasks", "查询最近的工作流人工任务。", json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["pending","approved","rejected","expired","superseded"],"title":"状态","enumLabels":["待处理","已通过","已拒绝","已过期","已替代"]},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20,"title":"返回数量"}},"additionalProperties":false}`),
 		func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				Status string `json:"status"`
@@ -141,15 +141,15 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				input.Limit = 20
 			}
 			if input.Limit < 1 || input.Limit > 100 {
-				return nil, errors.New("limit must be between 1 and 100")
+				return nil, errors.New("返回数量须为 1 至 100")
 			}
-			items, err := a.ListWorkflowHumanTasks(ctx, input.Status)
-			if len(items) > input.Limit {
-				items = items[:input.Limit]
+			page, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{Status: input.Status, Page: CursorPage{Limit: input.Limit}})
+			if err != nil {
+				return nil, err
 			}
-			return platformJSON(map[string]any{"items": items}, err)
+			return platformJSON(map[string]any{"items": page["records"]}, nil)
 		})
-	add("search_system_logs", "按级别、组件或关键词查询最近的结构化系统日志摘要。", json.RawMessage(`{"type":"object","properties":{"level":{"type":"string","enum":["debug","info","warn","error"]},"component":{"type":"string","maxLength":64},"keyword":{"type":"string","maxLength":100},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}},"additionalProperties":false}`),
+	add("search_system_logs", "按级别、组件或关键词查询最近的结构化系统日志摘要。", json.RawMessage(`{"type":"object","properties":{"level":{"type":"string","enum":["debug","info","warn","error"],"title":"日志级别","enumLabels":["调试","信息","警告","错误"]},"component":{"type":"string","maxLength":64,"title":"组件"},"keyword":{"type":"string","maxLength":100,"title":"关键词"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20,"title":"返回数量"}},"additionalProperties":false}`),
 		func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				Level     string `json:"level"`
@@ -164,7 +164,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				input.Limit = 20
 			}
 			if input.Limit < 1 || input.Limit > 50 {
-				return nil, errors.New("limit must be between 1 and 50")
+				return nil, errors.New("返回数量须为 1 至 50")
 			}
 			query := a.DB.WithContext(ctx).Model(&db.SystemLog{})
 			if input.Level != "" {
@@ -200,7 +200,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 				Select("channel, status, COUNT(*) AS count").Group("channel, status").Order("channel, status").Scan(&rows).Error
 			return platformJSON(map[string]any{"items": rows}, err)
 		})
-	add("list_node_capabilities", "查询当前实时工作流节点目录；指定 type 时返回完整 Schema。", json.RawMessage(`{"type":"object","properties":{"type":{"type":"string","maxLength":160}},"additionalProperties":false}`),
+	add("list_node_capabilities", "查询当前实时工作流节点目录；指定 type 时返回完整 Schema。", json.RawMessage(`{"type":"object","properties":{"type":{"type":"string","maxLength":160,"title":"节点类型"}},"additionalProperties":false}`),
 		func(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
 			var input struct {
 				Type string `json:"type"`
@@ -215,7 +215,7 @@ func (a *App) platformQueryCatalog() ([]sdk.AssistantQueryDescriptor, map[string
 						return platformJSON(definition, nil)
 					}
 				}
-				return nil, errors.New("workflow node type was not found")
+				return nil, errors.New("工作流节点类型不存在")
 			}
 			items := make([]map[string]any, 0, len(definitions))
 			for _, definition := range definitions {
@@ -255,24 +255,24 @@ func decodePlatformInput(raw json.RawMessage, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return errors.New("tool input is invalid")
+		return errors.New("工具输入无效")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("tool input must contain one JSON object")
+		return errors.New("工具输入须为单个 JSON 对象")
 	}
 	return nil
 }
 
 func platformJSON(value any, err error) (json.RawMessage, error) {
 	if err != nil {
-		return nil, errors.New("tool query failed")
+		return nil, errors.New("工具查询失败")
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, errors.New("encode tool result failed")
+		return nil, errors.New("编码工具结果失败")
 	}
 	if len(raw) > 64<<10 {
-		return nil, fmt.Errorf("tool result exceeds 64 KiB")
+		return nil, fmt.Errorf("工具结果超过 64 KiB")
 	}
 	return raw, nil
 }
@@ -304,11 +304,11 @@ func (a *App) QueryPlatform(ctx context.Context, name string, input json.RawMess
 	}
 	var value any
 	if json.Unmarshal(input, &value) != nil {
-		return nil, errors.New("invalid platform query")
+		return nil, errors.New("平台查询无效")
 	}
 	for _, desc := range catalog {
 		if desc.Name == name && validateWorkflowSchemaValue(desc.InputSchema, value) != nil {
-			return nil, errors.New("platform query does not match its schema")
+			return nil, errors.New("平台查询不符合 Schema")
 		}
 	}
 	return query(ctx, input)
@@ -340,7 +340,7 @@ func (a *App) ValidateDraft(ctx context.Context, request sdk.DraftRequest) (sdk.
 	}
 	name, description, raw := strings.TrimSpace(request.Name), strings.TrimSpace(request.Description), request.Graph
 	if name == "" || utf8.RuneCountInString(name) > 120 || utf8.RuneCountInString(description) > 500 {
-		return sdk.DraftSummary{}, errors.New("workflow name or description is invalid")
+		return sdk.DraftSummary{}, errors.New("工作流名称或说明无效")
 	}
 	validated, err := a.validateWorkflowGraph(raw)
 	if err != nil {
@@ -348,7 +348,7 @@ func (a *App) ValidateDraft(ctx context.Context, request sdk.DraftRequest) (sdk.
 	}
 	var graph workflowGraph
 	if json.Unmarshal([]byte(validated.graphJSON), &graph) != nil {
-		return sdk.DraftSummary{}, errors.New("decode normalized workflow graph failed")
+		return sdk.DraftSummary{}, errors.New("解析规范化工作流定义失败")
 	}
 	nodeTypes := make([]string, 0, len(validated.nodeTypes))
 	seenTypes := map[string]bool{}

@@ -20,13 +20,15 @@ type menuItem struct {
 var coreMenuItems = []menuItem{
 	{Name: "Home", Title: "首页", Path: "/home", Component: "/home/index", Icon: "ri:home-5-line", KeepAlive: true, FixedTab: true},
 	{Name: "SchedulerCenter", Title: "工作流", Path: "/scheduler", Component: "/index/index", Icon: "ri:time-line"},
-	{Name: "WorkflowDefinitions", Title: "工作流定义", Path: "/scheduler/definition", Component: "/scheduler/workflow", Icon: "ri:node-tree", Parent: "SchedulerCenter", KeepAlive: true},
-	{Name: "ConfigCenter", Title: "配置管理", Path: "/config", Component: "/index/index", Icon: "ri:tools-line"},
-	{Name: "OutboundProxies", Title: "代理配置", Path: "/config/proxies", Component: "/system/proxy", Icon: "ri:route-line", Parent: "ConfigCenter", KeepAlive: true},
-	{Name: "Plugins", Title: "插件管理", Path: "/config/plugins", Component: "/system/plugins", Icon: "ri:puzzle-2-line", Parent: "ConfigCenter", KeepAlive: true},
-	{Name: "System", Title: "系统管理", Path: "/system", Component: "/index/index", Icon: "ri:settings-3-line"},
-	{Name: "Menus", Title: "菜单管理", Path: "/system/menu", Component: "/system/menu", Icon: "ri:menu-line", Parent: "System", KeepAlive: true},
-	{Name: "UserCenter", Title: "个人中心", Path: "/profile", Component: "/system/user-center", KeepAlive: true, IsHidden: true},
+	{Name: "Plugins", Title: "插件", Path: "/plugins", Component: "/index/index", Icon: "ri:puzzle-2-line"},
+	{Name: "Settings", Title: "设置", Path: "/config", Component: "/index/index", Icon: "ri:settings-3-line"},
+	{Name: "WorkflowDefinitions", Title: "工作流列表", Path: "/scheduler/definition", Component: "/scheduler/workflow", Icon: "ri:node-tree", Parent: "SchedulerCenter", KeepAlive: true},
+	{Name: "WorkflowRuns", Title: "运行记录", Path: "/scheduler/execution", Component: "/scheduler/execution", Icon: "ri:history-line", Parent: "SchedulerCenter", KeepAlive: true},
+	{Name: "WorkflowTasks", Title: "人工待办", Path: "/scheduler/tasks", Component: "/scheduler/tasks", Icon: "ri:task-line", Parent: "SchedulerCenter", KeepAlive: true},
+	{Name: "PluginCatalog", Title: "插件目录", Path: "/config/plugins", Component: "/system/plugins", Icon: "ri:apps-2-line", Parent: "Plugins", KeepAlive: true},
+	{Name: "OutboundProxies", Title: "出站代理", Path: "/config/proxies", Component: "/system/proxy", Icon: "ri:route-line", Parent: "Settings", KeepAlive: true},
+	{Name: "Menus", Title: "菜单管理", Path: "/system/menu", Component: "/system/menu", Icon: "ri:menu-line", Parent: "Settings", KeepAlive: true},
+	{Name: "UserCenter", Title: "个人账号", Path: "/profile", Component: "/system/user-center", Icon: "ri:user-settings-line", Parent: "Settings", KeepAlive: true},
 }
 
 // 只有空库首次初始化写默认布局；后续启动不触碰用户的导航配置。
@@ -42,8 +44,7 @@ func Seed(ctx context.Context, gdb *gorm.DB, hasher *security.PasswordHasher, pa
 		if marker.RowsAffected == 0 {
 			return nil
 		}
-		items := append([]menuItem(nil), coreMenuItems[:3]...)
-		own := map[string]bool{}
+		items := append([]menuItem(nil), coreMenuItems...)
 		pluginOrder := map[string]int{"official.ai": 1, "official.quant": 2, "official.binance": 3}
 		pages = append([]sdk.RegisteredPage(nil), pages...)
 		sort.SliceStable(pages, func(i, j int) bool {
@@ -53,25 +54,9 @@ func Seed(ctx context.Context, gdb *gorm.DB, hasher *security.PasswordHasher, pa
 			}
 			return pages[i].RouteName() < pages[j].RouteName()
 		})
-		for _, page := range pages {
-			if page.Menu.Mode != sdk.PluginMenuOwn || own[page.PluginID] {
-				continue
-			}
-			own[page.PluginID] = true
-			items = append(items, menuItem{Name: "PluginMenu:" + page.PluginID, Title: page.Menu.Title, Path: "/plugins/" + page.PluginID, Component: "/index/index", Icon: page.Menu.Icon})
-		}
-		items = append(items, coreMenuItems[3:]...)
 		for _, item := range pages {
 			page := item
-			parent := ""
-			switch page.Menu.Mode {
-			case sdk.PluginMenuExisting:
-				parent = page.Menu.Parent
-			case sdk.PluginMenuDirect:
-			default:
-				parent = "PluginMenu:" + page.PluginID
-			}
-			items = append(items, menuItem{Name: page.RouteName(), Title: page.Title, Path: page.RoutePath(), Component: page.RouteComponent(), Icon: page.Icon, Parent: parent, KeepAlive: page.KeepAlive, Page: &page})
+			items = append(items, menuItem{Name: page.RouteName(), Title: page.Title, Path: page.RoutePath(), Component: page.RouteComponent(), Icon: page.Icon, Parent: "Plugins", KeepAlive: page.KeepAlive, Page: &page})
 		}
 		ids := map[string]int64{}
 		for index, item := range items {

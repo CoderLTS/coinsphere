@@ -85,8 +85,8 @@ func Register(registrar sdk.Registrar, host sdk.Host) error {
 func (q *qqRuntime) register(registrar sdk.Registrar) error {
 	if err := registrar.Trigger(sdk.NodeDescriptor{
 		Type: "official.qq.receive", Version: "1.0.0", Kind: sdk.NodeKindTrigger,
-		Title: "QQ 消息接收", Description: "接收 QQ 群聊 @ 消息或单聊消息", Category: "start", Aliases: []string{"QQ 接收", "QQ群消息", "单聊消息"}, Tags: []string{"入口", "QQ", "消息"}, SortOrder: 70, Color: "#0891b2", Icon: "message-square", Width: 220, Height: 72,
-		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"appId":{"type":"string","title":"应用 ID","pattern":"^[A-Za-z0-9_-]{1,128}$"},"clientSecret":{"type":"string","title":"客户端密钥","x-coinsphere-secret":true}},"required":["appId","clientSecret"],"additionalProperties":false}`),
+		Title: "QQ 消息接收", Description: "接收 QQ 群聊 @ 消息或单聊消息", Category: "start", CategoryTitle: "触发入口", Aliases: []string{"QQ 接收", "QQ群消息", "单聊消息"}, Tags: []string{"入口", "QQ", "消息"}, SortOrder: 70, Color: "#0891b2", Icon: "message-square", Width: 220, Height: 72,
+		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"appId":{"type":"string","title":"应用 ID","pattern":"^[A-Za-z0-9_-]{1,128}$"},"clientSecret":{"type":"string","title":"客户端密钥","x-coinsphere-secret":true,"description":"仅保存加密值；留空保持原有凭据。"}},"required":["appId","clientSecret"],"additionalProperties":false}`),
 		UISchema:     json.RawMessage(`{"ui:order":["appId","clientSecret"]}`),
 		InputSchema:  emptyObjectSchema,
 		OutputSchema: qqReceiveOutputSchema(),
@@ -96,27 +96,27 @@ func (q *qqRuntime) register(registrar sdk.Registrar) error {
 	}
 	return registrar.Action(sdk.NodeDescriptor{
 		Type: "official.qq.send", Version: "1.0.0", Kind: sdk.NodeKindAction,
-		Title: "QQ 消息发送", Description: "向 QQ 群聊或用户发送消息", Category: "integration", Aliases: []string{"QQ 发送", "QQ群消息", "单聊消息"}, Tags: []string{"集成", "QQ", "消息"}, SortOrder: 20, Color: "#0891b2", Icon: "send", Width: 220, Height: 72,
-		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"appId":{"type":"string","title":"应用 ID","pattern":"^[A-Za-z0-9_-]{1,128}$"},"clientSecret":{"type":"string","title":"客户端密钥","x-coinsphere-secret":true}},"required":["appId","clientSecret"],"additionalProperties":false}`),
+		Title: "QQ 消息发送", Description: "向 QQ 群聊或用户发送消息", Category: "integration", CategoryTitle: "集成", Aliases: []string{"QQ 发送", "QQ群消息", "单聊消息"}, Tags: []string{"集成", "QQ", "消息"}, SortOrder: 20, Color: "#0891b2", Icon: "send", Width: 220, Height: 72,
+		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"appId":{"type":"string","title":"应用 ID","pattern":"^[A-Za-z0-9_-]{1,128}$"},"clientSecret":{"type":"string","title":"客户端密钥","x-coinsphere-secret":true,"description":"仅保存加密值；留空保持原有凭据。"}},"required":["appId","clientSecret"],"additionalProperties":false}`),
 		UISchema:     json.RawMessage(`{"ui:order":["appId","clientSecret"]}`),
 		InputSchema:  qqSendInputSchema(),
-		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"deliveryId":{"type":"integer"},"channel":{"type":"string","const":"qq"},"status":{"type":"string","const":"delivered"},"deliveredAt":{"type":"string","format":"date-time"},"providerMessageId":{"type":"string"}},"required":["deliveryId","channel","status","deliveredAt","providerMessageId"],"additionalProperties":false}`),
+		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"deliveryId":{"type":"integer","title":"投递编号"},"channel":{"type":"string","const":"qq","title":"渠道"},"status":{"type":"string","const":"delivered","title":"状态"},"deliveredAt":{"type":"string","format":"date-time","title":"送达时间","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"},"providerMessageId":{"type":"string","title":"渠道消息编号"}},"required":["deliveryId","channel","status","deliveredAt","providerMessageId"],"additionalProperties":false}`),
 		Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectNotification, State: sdk.StateStateless,
 	}, qqSendAction{runtime: q})
 }
 
 func qqSendInputSchema() json.RawMessage {
-	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subjectKey":{"type":"string","title":"业务键","minLength":1,"maxLength":256,"x-coinsphere-field-source":true},"targetType":{"type":"string","title":"目标类型","enum":["group","user"],"enumLabels":["群聊","单聊"],"x-coinsphere-field-source":true},"targetId":{"type":"string","title":"目标 OpenID","minLength":1,"maxLength":128,"x-coinsphere-field-source":true},"messageType":{"type":"string","title":"消息类型","enum":["text","markdown","media"],"enumLabels":["纯文本","Markdown","富媒体"],"x-coinsphere-field-source":true},"content":{"type":"string","title":"消息内容","minLength":1,"maxLength":2000,"x-coinsphere-field-source":true},"mediaType":{"type":"string","title":"媒体类型","enum":["image","video","audio","file"],"enumLabels":["图片","视频","语音","文件"],"x-coinsphere-field-source":true},"mediaUrl":{"type":"string","title":"媒体 URL","format":"uri","maxLength":2000,"x-coinsphere-field-source":true},"mediaFilename":{"type":"string","title":"媒体文件名","maxLength":255,"x-coinsphere-field-source":true},"keyboardTemplateId":{"type":"string","title":"键盘模板 ID","maxLength":128,"x-coinsphere-field-source":true},"replyToMessageId":{"type":"string","title":"回复消息 ID","maxLength":128,"x-coinsphere-field-source":true},"replySequence":{"type":"integer","title":"回复序号","minimum":1,"maximum":5,"default":1,"x-coinsphere-field-source":true}},"required":["subjectKey","targetType","targetId","messageType"],"allOf":[{"if":{"properties":{"messageType":{"const":"text"}}},"then":{"required":["content"]}},{"if":{"properties":{"messageType":{"const":"markdown"}}},"then":{"required":["content"]}},{"if":{"properties":{"messageType":{"const":"media"}}},"then":{"required":["mediaType","mediaUrl"]}}],"additionalProperties":false}`)
+	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subjectKey":{"type":"string","title":"业务键","minLength":1,"maxLength":256,"x-coinsphere-field-source":true},"targetType":{"type":"string","title":"目标类型","enum":["group","user"],"enumLabels":["群聊","单聊"],"x-coinsphere-field-source":true},"targetId":{"type":"string","title":"目标 OpenID","minLength":1,"maxLength":128,"x-coinsphere-field-source":true},"messageType":{"type":"string","title":"消息类型","enum":["text","markdown","media"],"enumLabels":["纯文本","Markdown","富媒体"],"x-coinsphere-field-source":true},"content":{"type":"string","title":"消息内容","minLength":1,"maxLength":2000,"x-coinsphere-field-source":true},"mediaType":{"type":"string","title":"媒体类型","enum":["image","video","audio","file"],"enumLabels":["图片","视频","语音","文件"],"x-coinsphere-field-source":true},"mediaUrl":{"type":"string","title":"媒体 URL","format":"uri","maxLength":2000,"x-coinsphere-field-source":true},"mediaFilename":{"type":"string","title":"媒体文件名","maxLength":255,"x-coinsphere-field-source":true},"keyboardTemplateId":{"type":"string","title":"键盘模板 ID","maxLength":128,"x-coinsphere-field-source":true},"replyToMessageId":{"type":"string","title":"回复消息 ID","maxLength":128,"x-coinsphere-field-source":true},"replySequence":{"type":"integer","title":"回复序号","minimum":1,"maximum":5,"default":1,"x-coinsphere-field-source":true}},"required":["subjectKey","targetType","targetId","messageType"],"allOf":[{"if":{"properties":{"messageType":{"const":"text","title":"消息类型"}}},"then":{"required":["content"]}},{"if":{"properties":{"messageType":{"const":"markdown","title":"消息类型"}}},"then":{"required":["content"]}},{"if":{"properties":{"messageType":{"const":"media","title":"消息类型"}}},"then":{"required":["mediaType","mediaUrl"]}}],"additionalProperties":false}`)
 }
 
 func qqReceiveOutputSchema() json.RawMessage {
-	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"eventType":{"type":"string","enum":["GROUP_AT_MESSAGE_CREATE","C2C_MESSAGE_CREATE"]},"targetType":{"type":"string","enum":["group","user"]},"targetId":{"type":"string","minLength":1,"maxLength":128},"senderOpenId":{"type":"string","minLength":1,"maxLength":128},"messageId":{"type":"string","minLength":1,"maxLength":128},"messageType":{"type":"integer"},"content":{"type":"string","maxLength":32768},"timestamp":{"type":"string","format":"date-time"},"messageIndex":{"type":"string","maxLength":256},"referencedMessageIndex":{"type":"string","maxLength":256},"attachments":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"url":{"type":"string","maxLength":4096},"filename":{"type":"string","maxLength":255},"contentType":{"type":"string","maxLength":128},"size":{"type":"integer","minimum":0},"width":{"type":"integer","minimum":0},"height":{"type":"integer","minimum":0},"voiceWavUrl":{"type":"string","maxLength":4096},"asrText":{"type":"string","maxLength":32768}},"required":["url","filename","contentType","size"],"additionalProperties":false}}},"required":["eventType","targetType","targetId","senderOpenId","messageId","messageType","content","timestamp","attachments"],"additionalProperties":false}`)
+	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"eventType":{"type":"string","enum":["GROUP_AT_MESSAGE_CREATE","C2C_MESSAGE_CREATE"],"title":"事件类型","enumLabels":["群聊提及消息","单聊消息"]},"targetType":{"type":"string","enum":["group","user"],"title":"目标类型","enumLabels":["群聊","用户"]},"targetId":{"type":"string","minLength":1,"maxLength":128,"title":"接收目标标识"},"senderOpenId":{"type":"string","minLength":1,"maxLength":128,"title":"发送者标识"},"messageId":{"type":"string","minLength":1,"maxLength":128,"title":"消息编号"},"messageType":{"type":"integer","title":"消息类型"},"content":{"type":"string","maxLength":32768,"title":"内容"},"timestamp":{"type":"string","format":"date-time","title":"时间戳","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"},"messageIndex":{"type":"string","maxLength":256,"title":"消息序号"},"referencedMessageIndex":{"type":"string","maxLength":256,"title":"引用消息序号"},"attachments":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"url":{"type":"string","maxLength":4096,"title":"URL 地址"},"filename":{"type":"string","maxLength":255,"title":"文件名"},"contentType":{"type":"string","maxLength":128,"title":"内容类型"},"size":{"type":"integer","minimum":0,"title":"大小"},"width":{"type":"integer","minimum":0,"title":"宽度"},"height":{"type":"integer","minimum":0,"title":"高度"},"voiceWavUrl":{"type":"string","maxLength":4096,"title":"语音 WAV 地址"},"asrText":{"type":"string","maxLength":32768,"title":"语音识别文本"}},"required":["url","filename","contentType","size"],"additionalProperties":false},"title":"附件"}},"required":["eventType","targetType","targetId","senderOpenId","messageId","messageType","content","timestamp","attachments"],"additionalProperties":false}`)
 }
 
 func (a qqSendAction) Execute(ctx context.Context, request sdk.ActionRequest) (sdk.ActionResult, error) {
 	var input qqSendInput
 	if json.Unmarshal(request.Input, &input) != nil {
-		return sdk.ActionResult{}, errors.New("QQ send input is invalid")
+		return sdk.ActionResult{}, errors.New("QQ 发送输入无效")
 	}
 	if err := validateQQSendInput(&input); err != nil {
 		return sdk.ActionResult{}, err
@@ -128,7 +128,7 @@ func (a qqSendAction) Execute(ctx context.Context, request sdk.ActionRequest) (s
 	workflowID, workflowErr := strconv.ParseInt(request.Revision.WorkflowID, 10, 64)
 	revisionID, revisionErr := strconv.ParseInt(request.Revision.RevisionID, 10, 64)
 	if workflowErr != nil || revisionErr != nil {
-		return sdk.ActionResult{}, errors.New("QQ workflow identity is invalid")
+		return sdk.ActionResult{}, errors.New("QQ 工作流标识无效")
 	}
 	title, auditMessage := qqAuditText(input)
 	delivery, err := notification.BeginExternalDelivery(ctx, a.runtime.db, request, workflowID, revisionID, "qq", title, notification.ExternalDeliveryInput{
@@ -145,13 +145,13 @@ func (a qqSendAction) Execute(ctx context.Context, request sdk.ActionRequest) (s
 		if updateErr := notification.FinishExternalDelivery(ctx, a.runtime.db, delivery.ID, "failed", category); updateErr != nil {
 			return sdk.ActionResult{}, updateErr
 		}
-		return sdk.ActionResult{}, errors.New("QQ provider delivery failed: " + category)
+		return sdk.ActionResult{}, errors.New("QQ 发送失败：" + category)
 	}
 	if err := notification.FinishExternalDelivery(ctx, a.runtime.db, delivery.ID, "delivered", ""); err != nil {
 		return sdk.ActionResult{}, err
 	}
 	if err := a.runtime.db.WithContext(ctx).First(&delivery, delivery.ID).Error; err != nil {
-		return sdk.ActionResult{}, errors.New("load QQ delivery failed")
+		return sdk.ActionResult{}, errors.New("读取 QQ 发送记录失败")
 	}
 	return qqSendResult(delivery, providerMessageID), nil
 }
@@ -178,20 +178,20 @@ func validateQQSendInput(input *qqSendInput) error {
 		input.TargetType != "group" && input.TargetType != "user" ||
 		utf8.RuneCountInString(input.ReplyToMessageID) > 128 || input.ReplySequence < 1 || input.ReplySequence > maxReplySequence ||
 		utf8.RuneCountInString(input.KeyboardTemplateID) > 128 || utf8.RuneCountInString(input.MediaFilename) > 255 {
-		return errors.New("QQ send target or reply configuration is invalid")
+		return errors.New("QQ 发送目标或回复配置无效")
 	}
 	switch input.MessageType {
 	case "text", "markdown":
 		if strings.TrimSpace(input.Content) == "" || utf8.RuneCountInString(input.Content) > 2000 ||
 			input.MediaType != "" || input.MediaURL != "" || input.MediaFilename != "" {
-			return errors.New("QQ text or Markdown content is invalid")
+			return errors.New("QQ 文本或 Markdown 内容无效")
 		}
 	case "media":
 		if input.Content != "" || !validQQMediaType(input.MediaType) || !validQQMediaURL(input.MediaURL) {
-			return errors.New("QQ media content is invalid")
+			return errors.New("QQ 媒体内容无效")
 		}
 	default:
-		return errors.New("QQ message type is invalid")
+		return errors.New("QQ 消息类型无效")
 	}
 	return nil
 }
@@ -237,13 +237,13 @@ func (q *qqRuntime) readCredentials(ctx context.Context, raw json.RawMessage, se
 		AppID string `json:"appId"`
 	}
 	if json.Unmarshal(raw, &config) != nil {
-		return qqCredentials{}, errors.New("QQ configuration is invalid")
+		return qqCredentials{}, errors.New("QQ 配置无效")
 	}
 	secret, err := secrets.Read(ctx, "clientSecret")
 	credentials := qqCredentials{AppID: strings.TrimSpace(config.AppID), ClientSecret: strings.TrimSpace(string(secret))}
 	if err != nil || !validQQAppID(credentials.AppID) ||
 		credentials.ClientSecret == "" || len(credentials.ClientSecret) > 4096 {
-		return qqCredentials{}, errors.New("QQ credentials are unavailable")
+		return qqCredentials{}, errors.New("QQ 凭据不可用")
 	}
 	return credentials, nil
 }
@@ -295,13 +295,13 @@ func (q *qqRuntime) send(ctx context.Context, credentials qqCredentials, input q
 		return "", category, err
 	}
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
-		return "", qqStatusCategory(status), errors.New("QQ rejected message")
+		return "", qqStatusCategory(status), errors.New("QQ 拒绝了消息请求")
 	}
 	var result struct {
 		ID string `json:"id"`
 	}
 	if json.Unmarshal(raw, &result) != nil || strings.TrimSpace(result.ID) == "" || len(result.ID) > 128 {
-		return "", "invalid_response", errors.New("decode QQ message response")
+		return "", "invalid_response", errors.New("解析 QQ 消息响应失败")
 	}
 	return strings.TrimSpace(result.ID), "", nil
 }
@@ -321,13 +321,13 @@ func (q *qqRuntime) uploadMedia(ctx context.Context, credentials qqCredentials, 
 		return "", category, err
 	}
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
-		return "", qqStatusCategory(status), errors.New("QQ rejected media upload")
+		return "", qqStatusCategory(status), errors.New("QQ 拒绝了媒体上传")
 	}
 	var result struct {
 		FileInfo string `json:"file_info"`
 	}
 	if json.Unmarshal(raw, &result) != nil || strings.TrimSpace(result.FileInfo) == "" || len(result.FileInfo) > 16<<10 {
-		return "", "invalid_response", errors.New("decode QQ media response")
+		return "", "invalid_response", errors.New("解析 QQ 媒体响应失败")
 	}
 	return strings.TrimSpace(result.FileInfo), "", nil
 }
@@ -352,18 +352,18 @@ func (q *qqRuntime) accessToken(ctx context.Context, credentials qqCredentials) 
 		ExpiresIn   json.RawMessage `json:"expires_in"`
 	}
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
-		return "", qqStatusCategory(status), errors.New("QQ access token request rejected")
+		return "", qqStatusCategory(status), errors.New("QQ 访问令牌请求被拒绝")
 	}
 	if json.Unmarshal(raw, &result) != nil {
-		return "", "invalid_response", errors.New("decode QQ access token response")
+		return "", "invalid_response", errors.New("解析 QQ 访问令牌响应失败")
 	}
 	token := strings.TrimSpace(result.AccessToken)
 	if result.Code != 0 || token == "" || len(token) > 16<<10 {
-		return "", "authentication", errors.New("QQ access token request rejected")
+		return "", "authentication", errors.New("QQ 访问令牌请求被拒绝")
 	}
 	ttl, err := qqTokenTTL(result.ExpiresIn)
 	if err != nil || ttl <= 0 || ttl > int64((24*time.Hour)/time.Second) {
-		return "", "invalid_response", errors.New("QQ access token expiry is invalid")
+		return "", "invalid_response", errors.New("QQ 访问令牌有效期无效")
 	}
 	q.tokens[fingerprint] = qqAccessToken{Value: token, ExpiresAt: time.Now().UTC().Add(time.Duration(ttl) * time.Second)}
 	return token, "", nil
@@ -421,7 +421,7 @@ func qqStatusCategory(status int) string {
 
 func qqTokenTTL(raw json.RawMessage) (int64, error) {
 	if len(raw) == 0 {
-		return 0, errors.New("missing QQ token expiry")
+		return 0, errors.New("缺少 QQ 令牌有效期")
 	}
 	text := string(raw)
 	if raw[0] == '"' {
@@ -438,7 +438,7 @@ func readQQResponse(reader io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if len(body) > qqResponseLimit {
-		return nil, errors.New("QQ response is too large")
+		return nil, errors.New("QQ 响应超过大小限制")
 	}
 	return body, nil
 }

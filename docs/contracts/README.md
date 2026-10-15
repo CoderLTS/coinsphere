@@ -1,6 +1,6 @@
 # 公共契约
 
-本契约对应 Core 5、SDK major 5、Graph schemaVersion 3 和 PostgreSQL 16。generation 5 使用空库初始化，不提供旧 API、旧图、旧数据转换或迁移。初始化与恢复见[数据库手册](../runbooks/database-migrations.md)。
+本契约对应 Core 1.0.0、SDK major 1、Graph schemaVersion 3 和 PostgreSQL 16。generation 5 使用空库初始化，不提供旧 API、旧图、旧数据转换或迁移。初始化与恢复见[数据库手册](../runbooks/database-migrations.md)。
 
 ## HTTP 与身份
 
@@ -11,13 +11,14 @@
 | 接口                                                       | 语义                                                                                            |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | POST /api/v1/workflows                                     | graph/template、metadata、secretChanges 和运行配置原子创建；返回真实工作流与初始 draft 指针     |
-| GET /api/v1/workflows                                      | 分页摘要，含最近 Run 状态；不要求前端逐行取详情                                                 |
+| GET /api/v1/workflows                                      | 分页摘要，含草稿/发布修订号、最近运行状态及触发时间；不要求前端逐行取详情                     |
 | POST /api/v1/workflows/{id}/revisions                      | expectedDraftRevisionId、graph、可选 metadata/secretChanges 原子保存；过期指针返回冲突          |
 | POST /api/v1/workflows/{id}/publish                        | revisionId、expectedPublishedRevisionId 显式发布；必要凭据或插件声明不满足时拒绝                |
 | POST /api/v1/workflows/{id}/lifecycle                      | activate/deactivate 等生命周期操作；自动触发绑定发布定义                                        |
 | POST /api/v1/workflows/{id}/runs                           | revisionId、entryPoint、input 创建固定快照运行；手工试运行不切换发布指针                        |
+| GET /api/v1/workflows/{id}/runs、GET /api/v1/workflow-runs | 工作流运行或跨工作流运行记录，游标分页并支持工作流/状态/触发方式/时间/关键词筛选                |
 | GET/POST /api/v1/workflow-runs/{runId}                     | 查询真实 Run 与节点尝试；有效会话下的 cancel/retry/replay                                       |
-| GET /api/v1/human-tasks、POST /api/v1/human-tasks/{taskId} | 个人待办列表；一次性 approve/reject，已决定/过期返回冲突                                        |
+| GET /api/v1/human-tasks、POST /api/v1/human-tasks/{taskId} | 人工待办游标分页，可按工作流、运行和状态筛选；一次性 approve/reject，已决定/过期返回冲突        |
 | PUT /api/v1/me/password                                    | currentPassword、newPassword；校验当前密码，保存新哈希并递增 session_version，全部会话立即失效  |
 | /api/v1/plugins/{pluginId}/results/...                     | 插件声明 ResultPageKey 的直接结果路由；按 ScopeSchema/FilterSchema 解析当前请求，无固定视图写入 |
 | GET /api/v1/plugins/catalog                                | 已加载插件的结果页和运行面板目录；节点另由 /workflows/node-definitions 提供                     |
@@ -25,6 +26,8 @@
 所有受保护请求继续校验资源存在性、运行状态、当前结果请求范围及插件作用域；制品必须有可访问的引用，不能仅凭 SHA256 读取。站内通知统一发送给个人账号，节点不接受站内用户或角色收件人配置。
 
 ## Graph 3
+
+`POST /api/v1/workflows/validate` 返回 `{valid, issues[]}`。问题包含 `scope`、`level`、稳定的机器 `code` 和中文 `message`；可定位时补充 `nodeInstanceId`、`edgeId` 与相对于对应对象的 `fieldPath`。字段路径保留原始键名，循环子图对象使用父节点编号加 `.` 前缀。校验沿用首个失败即返回的流程，界面不得将缺少定位信息的问题伪装为字段错误。节点目录通过 `pluginId`/`pluginName` 表示插件归属，通过 `category`/`categoryTitle` 分离机器分类与中文显示名称。
 
 图由 schemaVersion、entryPoints、nodes、edges 组成。entryPoints 使用通用名字，main 是默认入口；每个入口指向有效节点，不要求 realtime/backtest 固定名称。节点保留 nodeInstanceId/nodeType/nodeVersion/config/inputBindings/position，版本精确校验。节点与连线的可选 label 是最多 80 字符的显示名称，不参与执行；保存完整往返，不改写历史修订。画布固定左右端口、直角折线和圆角连接，线上仅显示简短名称，CEL 全文在连线属性面板。
 
@@ -51,11 +54,11 @@ Run 状态原样返回 queued/running/waiting/retrying/succeeded/failed/cancelle
 
 审批创建与 waiting 同事务；决定、取消、过期和替代原子恢复 Run，不会产生已决定任务仍永久 waiting。持久状态按 workflow/revision/node 隔离，含状态图全工作流串行提交。
 
-## SDK 5 与贡献
+## SDK 1 与贡献
 
 ActionRequest 提供 Revision、NodeInstanceID、OperationKey、Input、Config、Secrets、State、Artifacts、Incoming、GraphSnapshot 与 Logger；ActionResult 提供 Output/Artifacts。TriggerRequest 与 Emitter 用于持久事件，Trigger 必须响应取消。金融类型和逐 K 线计算归插件领域契约。
 
-PluginDescriptor 声明 contributes，不声明角色或权限。manifest 保持 schemaVersion 1、sdkMajor 5；官方版本与真实依赖来自 backend/version/builtin.json。注册拒绝重复插件/节点/贡献、依赖缺失及错误 Schema。ResultPage.Actions 和 RouteDescriptor.Action 保留页面动作匹配，不能以任意动作扩大请求资源。
+PluginDescriptor 声明 contributes，不声明角色或权限。manifest 保持 schemaVersion 1、sdkMajor 1；官方版本与真实依赖来自 backend/version/builtin.json。注册拒绝重复插件/节点/贡献、依赖缺失及错误 Schema。ResultPage.Actions 和 RouteDescriptor.Action 保留页面动作匹配，不能以任意动作扩大请求资源。
 
 | Scope | 路由与约束 |
 | --- | --- |
@@ -67,7 +70,7 @@ PluginDescriptor 声明 contributes，不声明角色或权限。manifest 保持
 
 Host 提供 Platform、Sessions、Credentials、Store/Stores、Network、OutboundProxy、Inbox、Realtime 和 Events。Platform 只提供有界平台摘要、工作流查询、节点/插件目录、插件只读查询、草稿校验和创建停用草稿；不暴露发布、激活或运行。AI 不能直接依赖 Core 内部实现或业务表。
 
-Vue pages、resultPages、resultConfigs、runPanels、nodeEditors 和最小 headerActions 按 pluginId/贡献类型/key 加载。resultPages 接收 context:{pluginId,pageKey,scope,filters,allowedActions}；resultConfigs 接收 scope/filters 双向模型及 Schema；RunPanel 接收 result:{run,runNode}。缺插件或组件显示明确错误。
+Vue pages、resultPages、runPanels、nodeEditors 和最小 headerActions 按 pluginId/贡献类型/key 加载。普通页面和结果页面接收 `PluginPageContext { pluginId, pageKey, allowedActions }`，页面自行维护 scope、filters、URL 状态、查询、详情、导出和页面内交互；宿主只负责稳定路由、目录校验、组件加载和加载失败提示。RunPanel 接收 result:{run,runNode,outputSchema?}；outputSchema 为当前节点的输出 Schema，插件可复用 SDK 的 schemaOutputFields 按中文元数据展示，原始 JSON 保持原值。缺插件或组件显示明确错误。
 
 ## 导航
 

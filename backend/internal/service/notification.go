@@ -19,7 +19,7 @@ func (a *App) ListInAppNotifications(ctx context.Context, userID int64, page Cur
 		Where("recipient_user_id = ? AND channel = ? AND status = ?", userID, "in_app", "delivered")
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, errors.New("count in-app notifications failed")
+		return nil, errors.New("读取站内通知数量失败")
 	}
 	afterID, err := page.AfterID()
 	if err != nil {
@@ -30,7 +30,7 @@ func (a *App) ListInAppNotifications(ctx context.Context, userID int64, page Cur
 	}
 	var deliveries []db.NotificationDelivery
 	if err := query.Order("id DESC").Limit(page.Limit + 1).Find(&deliveries).Error; err != nil {
-		return nil, errors.New("list in-app notifications failed")
+		return nil, errors.New("读取站内通知列表失败")
 	}
 	hasMore := len(deliveries) > page.Limit
 	if hasMore {
@@ -55,7 +55,7 @@ func (a *App) MarkInAppRead(ctx context.Context, userID, deliveryID int64) (int6
 		Where("id = ? AND recipient_user_id = ? AND channel = ? AND status = ?", deliveryID, userID, "in_app", "delivered").
 		Updates(map[string]any{"is_read": true, "read_at": now, "updated_at": now})
 	if result.Error != nil {
-		return 0, errors.New("mark in-app notification read failed")
+		return 0, errors.New("标记站内通知已读失败")
 	}
 	if result.RowsAffected == 0 {
 		return 0, ErrNotFound
@@ -69,7 +69,7 @@ func (a *App) MarkAllInAppRead(ctx context.Context, userID int64) (M, error) {
 		Where("recipient_user_id = ? AND channel = ? AND status = ? AND is_read = ?", userID, "in_app", "delivered", false).
 		Updates(map[string]any{"is_read": true, "read_at": now, "updated_at": now})
 	if result.Error != nil {
-		return nil, errors.New("mark all in-app notifications read failed")
+		return nil, errors.New("标记全部站内通知已读失败")
 	}
 	return M{"updatedCount": result.RowsAffected, "unreadCount": 0}, nil
 }

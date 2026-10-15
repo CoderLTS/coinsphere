@@ -92,6 +92,32 @@ func businessPlugin(t *testing.T, registry *sdk.Registry, action testAction) {
 	}
 }
 
+func TestWorkflowNodeCatalogNames(t *testing.T) {
+	registry := sdk.NewRegistry()
+	businessPlugin(t, registry, func(context.Context, sdk.ActionRequest) (sdk.ActionResult, error) {
+		return sdk.ActionResult{Output: json.RawMessage(`{}`)}, nil
+	})
+	app := App{Plugins: registry}
+	found := false
+	for _, node := range app.ListWorkflowNodeDefinitions() {
+		if node.Type == "test.business.task" {
+			found = true
+			if node.PluginID != "test.business" || node.PluginName != "Business" {
+				t.Fatalf("missing plugin identity: %#v", node)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("business node missing from catalog")
+	}
+	core := App{}
+	for _, node := range core.ListWorkflowNodeDefinitions() {
+		if node.CategoryTitle == "" || node.PluginID != "" || node.PluginName != "" {
+			t.Fatalf("invalid core node identity: %#v", node)
+		}
+	}
+}
+
 func platformFixture(t *testing.T, action testAction) (*App, context.Context, *Principal) {
 	t.Helper()
 	_, database := testdb.Open(t, true)
@@ -741,7 +767,7 @@ func TestApprovalVisibilityAndConcurrentDecisions(t *testing.T) {
 	case <-executorCtx.Done():
 		t.Fatal("approval did not reach the transaction barrier")
 	}
-	if tasks, err := a.ListWorkflowHumanTasks(ctx, "pending"); err != nil || len(tasks) != 0 {
+	if tasks, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{Status: "pending", Page: CursorPage{Limit: 50}}); err != nil || len(tasks["records"].([]WorkflowHumanTaskView)) != 0 {
 		t.Fatal("uncommitted task became visible", err)
 	}
 	if _, err := a.DecideWorkflowHumanTask(ctx, taskID, WorkflowHumanTaskDecision{Action: "approve"}, p); !errors.Is(err, ErrNotFound) {
@@ -813,7 +839,7 @@ func TestLoopAbsoluteDeadlineAndCancellationReleaseSlots(t *testing.T) {
 					}
 				}
 				_, err := a.executeWorkflowLoop(ctx, run, revision, g.Nodes[1], json.RawMessage(`{}`), nil)
-				if err == nil || !strings.Contains(err.Error(), "absolute timeout") || len(entered) != 0 {
+				if err == nil || !strings.Contains(err.Error(), "总超时时间") || len(entered) != 0 {
 					t.Fatal("retry reset the absolute Loop deadline", err)
 				}
 				return
@@ -849,5 +875,72 @@ func TestLoopAbsoluteDeadlineAndCancellationReleaseSlots(t *testing.T) {
 				t.Fatal("loop retained resources or wrong terminal state", stored.Status)
 			}
 		})
+	}
+}
+
+func TestWorkflowRunAndHumanTaskPages(t *testing.T) {
+	a, ctx, p := platformFixture(t, nil)
+	first := createTestWorkflow(t, a, ctx, p, testGraph("task"))
+	second := createTestWorkflow(t, a, ctx, p, testGraph("task"))
+	firstRun := queueTestRun(t, a, ctx, p, first)
+	secondRun := queueTestRun(t, a, ctx, p, second)
+	page, err := a.PageWorkflowRuns(ctx, 0, WorkflowRunListQuery{Page: CursorPage{Limit: 1, scope: "all-runs"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := page["records"].([]WorkflowRunView)
+	if len(records) != 1 || records[0].ID != secondRun.ID || records[0].WorkflowName != second.Name || records[0].RevisionNumber != 1 || page["total"].(int64) != 2 || !page["hasMore"].(bool) {
+		t.Fatalf("unexpected run page: %#v", page)
+	}
+	next, err := ParseCursorPage(page["nextCursor"].(string), 1, "all-runs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail, err := a.PageWorkflowRuns(ctx, 0, WorkflowRunListQuery{Page: next})
+	if err != nil || tail["hasMore"].(bool) || tail["records"].([]WorkflowRunView)[0].ID != firstRun.ID {
+		t.Fatalf("run cursor: %#v %v", tail, err)
+	}
+	if _, err := ParseCursorPage(page["nextCursor"].(string), 1, "filtered-runs"); err == nil {
+		t.Fatal("cursor accepted under different filters")
+	}
+	filtered, err := a.PageWorkflowRuns(ctx, first.ID, WorkflowRunListQuery{Page: CursorPage{Limit: 20}})
+	if err != nil || filtered["total"].(int64) != 1 || filtered["records"].([]WorkflowRunView)[0].ID != firstRun.ID {
+		t.Fatalf("workflow filter: %#v %v", filtered, err)
+	}
+	if _, err := a.PageWorkflowRuns(context.Background(), 0, WorkflowRunListQuery{Page: CursorPage{Limit: 20}}); !errors.Is(err, ErrPermission) {
+		t.Fatal("anonymous run list accepted", err)
+	}
+	now := time.Now().UTC()
+	for _, run := range []WorkflowRunView{firstRun, secondRun} {
+		task := db.WorkflowHumanTask{WorkflowID: run.WorkflowID, RunID: run.ID, NodeInstanceID: "task", TaskType: "review", BusinessKey: fmt.Sprintf("page-%d", run.ID), Prompt: "分页测试", Status: "pending", DecisionJSON: "{}", ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now}
+		if err := a.DB.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{Status: "pending", Page: CursorPage{Limit: 1, scope: "pending"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskRows := tasks["records"].([]WorkflowHumanTaskView)
+	if len(taskRows) != 1 || tasks["total"].(int64) != 2 || !tasks["hasMore"].(bool) || taskRows[0].RunID != secondRun.ID || taskRows[0].WorkflowName != second.Name || taskRows[0].NodeName != "task" {
+		t.Fatalf("unexpected task page: %#v", tasks)
+	}
+	nextTask, err := ParseCursorPage(tasks["nextCursor"].(string), 1, "pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskTail, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{Status: "pending", Page: nextTask})
+	if err != nil || taskTail["hasMore"].(bool) || taskTail["records"].([]WorkflowHumanTaskView)[0].RunID != firstRun.ID {
+		t.Fatalf("task cursor: %#v %v", taskTail, err)
+	}
+	scoped, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{WorkflowID: first.ID, RunID: firstRun.ID, Page: CursorPage{Limit: 20}})
+	if err != nil || scoped["total"].(int64) != 1 {
+		t.Fatalf("task filters: %#v %v", scoped, err)
+	}
+	if _, err := a.PageWorkflowHumanTasks(ctx, WorkflowHumanTaskQuery{Status: "invalid", Page: CursorPage{Limit: 20}}); err == nil {
+		t.Fatal("invalid task status accepted")
+	}
+	if _, err := a.PageWorkflowHumanTasks(context.Background(), WorkflowHumanTaskQuery{Page: CursorPage{Limit: 20}}); !errors.Is(err, ErrPermission) {
+		t.Fatal("anonymous task list accepted", err)
 	}
 }

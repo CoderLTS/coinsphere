@@ -37,7 +37,7 @@ func (a *runtime) assistantToolCatalog(principal sdk.SystemScope) ([]assistantTo
 		})
 	}
 	var created *assistantWorkflowCreateSummary
-	add("create_workflow", "校验并创建停用草稿；不会发布、激活或运行工作流。", json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":120},"description":{"type":"string","maxLength":500},"graph":{"type":"object"}},"required":["name","description","graph"],"additionalProperties":false}`), func(ctx context.Context, input json.RawMessage) (json.RawMessage, *assistantWorkflowCreateSummary, error) {
+	add("create_workflow", "校验并创建停用草稿；不会发布、激活或运行工作流。", json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":120,"title":"名称"},"description":{"type":"string","maxLength":500,"title":"说明"},"graph":{"type":"object","title":"工作流定义"}},"required":["name","description","graph"],"additionalProperties":false}`), func(ctx context.Context, input json.RawMessage) (json.RawMessage, *assistantWorkflowCreateSummary, error) {
 		if created != nil {
 			raw, _, err := assistantToolJSON(created, nil)
 			return raw, created, err
@@ -83,24 +83,24 @@ func decodeAssistantToolInput(raw json.RawMessage, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return errors.New("tool input is invalid")
+		return errors.New("工具输入无效")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("tool input must contain one JSON object")
+		return errors.New("工具输入须为单个 JSON 对象")
 	}
 	return nil
 }
 
 func assistantToolJSON(value any, err error) (json.RawMessage, *assistantWorkflowCreateSummary, error) {
 	if err != nil {
-		return nil, nil, errors.New("tool query failed")
+		return nil, nil, errors.New("工具查询失败")
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, nil, errors.New("encode tool result failed")
+		return nil, nil, errors.New("编码工具结果失败")
 	}
 	if len(raw) > 64<<10 {
-		return nil, nil, fmt.Errorf("tool result exceeds 64 KiB")
+		return nil, nil, fmt.Errorf("工具结果超过 64 KiB")
 	}
 	return raw, nil, nil
 }

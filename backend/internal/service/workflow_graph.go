@@ -63,6 +63,27 @@ type validatedWorkflowLoop struct {
 	requiredSecrets map[workflowSecretKey]bool
 }
 
+type WorkflowValidationIssue struct {
+	Scope          string   `json:"scope"`
+	Level          string   `json:"level"`
+	Code           string   `json:"code"`
+	Message        string   `json:"message"`
+	NodeInstanceID string   `json:"nodeInstanceId,omitempty"`
+	EdgeID         string   `json:"edgeId,omitempty"`
+	FieldPath      []string `json:"fieldPath,omitempty"`
+}
+
+func (issue *WorkflowValidationIssue) Error() string { return issue.Message }
+func workflowIssue(code, message, node, edge string, field ...string) *WorkflowValidationIssue {
+	scope := "graph"
+	if node != "" {
+		scope = "node"
+	} else if edge != "" {
+		scope = "edge"
+	}
+	return &WorkflowValidationIssue{Scope: scope, Level: "error", Code: code, Message: message, NodeInstanceID: node, EdgeID: edge, FieldPath: field}
+}
+
 func (a *App) ValidateWorkflowGraph(raw json.RawMessage) error {
 	_, err := a.validateWorkflowGraph(raw)
 	return err
@@ -70,25 +91,25 @@ func (a *App) ValidateWorkflowGraph(raw json.RawMessage) error {
 
 func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph, error) {
 	if len(raw) == 0 || len(raw) > maxWorkflowGraphBytes {
-		return validatedWorkflowGraph{}, fmt.Errorf("workflow graph must contain 1 to %d bytes", maxWorkflowGraphBytes)
+		return validatedWorkflowGraph{}, fmt.Errorf("工作流定义大小必须在 1 至 %d 字节之间", maxWorkflowGraphBytes)
 	}
 	var graph workflowGraph
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&graph); err != nil {
-		return validatedWorkflowGraph{}, errors.New("workflow graph must match schema version 3")
+		return validatedWorkflowGraph{}, errors.New("工作流定义必须符合 Graph 3 格式")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return validatedWorkflowGraph{}, errors.New("workflow graph must contain exactly one JSON object")
+		return validatedWorkflowGraph{}, errors.New("工作流定义必须是单个 JSON 对象")
 	}
 	if graph.SchemaVersion != 3 {
-		return validatedWorkflowGraph{}, errors.New("workflow graph schemaVersion must be 3")
+		return validatedWorkflowGraph{}, errors.New("工作流 schemaVersion 必须为 3")
 	}
 	if len(graph.Nodes) == 0 || len(graph.Nodes) > maxWorkflowNodes {
-		return validatedWorkflowGraph{}, fmt.Errorf("workflow graph must contain 1 to %d nodes", maxWorkflowNodes)
+		return validatedWorkflowGraph{}, fmt.Errorf("工作流节点数量必须在 1 至 %d 之间", maxWorkflowNodes)
 	}
 	if len(graph.Edges) > maxWorkflowEdges {
-		return validatedWorkflowGraph{}, fmt.Errorf("workflow graph must not exceed %d edges", maxWorkflowEdges)
+		return validatedWorkflowGraph{}, fmt.Errorf("工作流连线数量不能超过 %d", maxWorkflowEdges)
 	}
 
 	descriptorCatalog := a.workflowNodeDescriptors()
@@ -100,38 +121,38 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 	triggerID := ""
 	for _, node := range graph.Nodes {
 		if len([]rune(node.Label)) > 80 {
-			return validatedWorkflowGraph{}, errors.New("node label must not exceed 80 characters")
+			return validatedWorkflowGraph{}, workflowIssue("node.label_length", "节点名称不能超过 80 个字符", node.NodeInstanceID, "", "label")
 		}
 		if !workflowNodeIDPattern.MatchString(node.NodeInstanceID) || nodes[node.NodeInstanceID].NodeInstanceID != "" {
-			return validatedWorkflowGraph{}, fmt.Errorf("invalid or duplicate nodeInstanceId %q", node.NodeInstanceID)
+			return validatedWorkflowGraph{}, workflowIssue("node.id", "节点标识无效或重复", node.NodeInstanceID, "", "nodeInstanceId")
 		}
 		desc, ok := descriptorCatalog[node.NodeType]
 		if !ok {
-			return validatedWorkflowGraph{}, fmt.Errorf("unknown node type %q", node.NodeType)
+			return validatedWorkflowGraph{}, workflowIssue("node.unavailable", "节点类型不可用，请检查插件加载状态", node.NodeInstanceID, "", "nodeType")
 		}
 		if desc.Version != node.NodeVersion {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q requires nodeVersion %s", node.NodeInstanceID, desc.Version)
+			return validatedWorkflowGraph{}, workflowIssue("node.version", "节点版本与当前插件不一致", node.NodeInstanceID, "", "nodeVersion")
 		}
 		if node.NodeType == "core.loop_item" || node.NodeType == "core.loop_end" {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q is only valid inside core.loop", node.NodeInstanceID)
+			return validatedWorkflowGraph{}, workflowIssue("node.loop_only", "此节点只能用于循环子图", node.NodeInstanceID, "", "nodeType")
 		}
 		if desc.Kind == sdk.NodeKindTrigger {
 			if triggerID != "" {
-				return validatedWorkflowGraph{}, errors.New("workflow graph must contain exactly one main trigger")
+				return validatedWorkflowGraph{}, errors.New("工作流必须包含且仅包含一个主触发节点")
 			}
 			triggerID = node.NodeInstanceID
 		}
 		if node.Position == nil {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q position is required", node.NodeInstanceID)
+			return validatedWorkflowGraph{}, workflowIssue("node.position", "请为节点设置画布位置", node.NodeInstanceID, "", "position")
 		}
 		config, err := decodeJSONObject(node.Config)
 		if err != nil {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q config must be a JSON object", node.NodeInstanceID)
+			return validatedWorkflowGraph{}, workflowIssue("node.config_object", "节点配置必须是 JSON 对象", node.NodeInstanceID, "", "config")
 		}
 		secretFields, secretRequired := workflowSecretFields(desc.ConfigSchema)
 		for field := range secretFields {
 			if _, exists := config[field]; exists {
-				return validatedWorkflowGraph{}, fmt.Errorf("node %q secret field %q must not be stored in graph config", node.NodeInstanceID, field)
+				return validatedWorkflowGraph{}, workflowIssue("node.secret_in_graph", "凭据必须通过加密凭据字段保存", node.NodeInstanceID, "", "config", field)
 			}
 			if secretRequired[field] {
 				requiredSecrets[workflowSecretKey{node.NodeInstanceID, field}] = true
@@ -139,16 +160,16 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 		}
 		ordinarySchema, err := ordinaryWorkflowConfigSchema(desc.ConfigSchema, secretFields)
 		if err != nil || validateWorkflowSchemaValue(ordinarySchema, config) != nil {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q config does not match its JSON Schema", node.NodeInstanceID)
+			return validatedWorkflowGraph{}, workflowIssue("node.config_schema", "节点配置不符合字段要求，请检查必填项和取值范围", node.NodeInstanceID, "", "config")
 		}
 		if desc.ValidateConfig != nil {
 			if err := desc.ValidateConfig(node.Config); err != nil {
-				return validatedWorkflowGraph{}, fmt.Errorf("node %q config is invalid: %w", node.NodeInstanceID, err)
+				return validatedWorkflowGraph{}, workflowIssue("node.config", "节点配置无效："+err.Error(), node.NodeInstanceID, "", "config")
 			}
 		}
 		if node.NodeType == "core.schedule" {
 			if _, err := nextWorkflowScheduledAt(node.Config, time.Now().UTC()); err != nil {
-				return validatedWorkflowGraph{}, fmt.Errorf("node %q schedule config is invalid", node.NodeInstanceID)
+				return validatedWorkflowGraph{}, workflowIssue("node.schedule", "定时配置无效，请检查 Cron 表达式、间隔与时区", node.NodeInstanceID, "", "config")
 			}
 		}
 		nodes[node.NodeInstanceID] = node
@@ -157,15 +178,15 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 		versions[node.NodeInstanceID] = workflowNodeVersion{NodeType: node.NodeType, NodeVersion: node.NodeVersion}
 	}
 	if triggerID == "" {
-		return validatedWorkflowGraph{}, errors.New("workflow graph must contain exactly one main trigger")
+		return validatedWorkflowGraph{}, errors.New("工作流必须包含且仅包含一个主触发节点")
 	}
 	entryPoints := graph.EntryPoints
 	if len(entryPoints) == 0 || entryPoints["main"] != triggerID {
-		return validatedWorkflowGraph{}, errors.New("entryPoints.main must reference the main trigger")
+		return validatedWorkflowGraph{}, errors.New("主入口必须指向主触发节点")
 	}
 	for key, id := range entryPoints {
 		if !workflowNodeIDPattern.MatchString(key) || len(key) > 32 || nodes[id].NodeInstanceID == "" {
-			return validatedWorkflowGraph{}, fmt.Errorf("invalid workflow entryPoint %q", key)
+			return validatedWorkflowGraph{}, fmt.Errorf("工作流入口 %q 无效", key)
 		}
 	}
 
@@ -175,15 +196,26 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 		}
 		loop, err := validateWorkflowLoop(node, descriptorCatalog)
 		if err != nil {
-			return validatedWorkflowGraph{}, fmt.Errorf("node %q: %w", node.NodeInstanceID, err)
+			var issue *WorkflowValidationIssue
+			if errors.As(err, &issue) {
+				qualified := *issue
+				if qualified.NodeInstanceID != "" {
+					qualified.NodeInstanceID = node.NodeInstanceID + "." + qualified.NodeInstanceID
+				}
+				if qualified.EdgeID != "" {
+					qualified.EdgeID = node.NodeInstanceID + "." + qualified.EdgeID
+				}
+				return validatedWorkflowGraph{}, &qualified
+			}
+			return validatedWorkflowGraph{}, workflowIssue("node.loop_body", err.Error(), node.NodeInstanceID, "", "config", "body")
 		}
 		for bodyID, bodyNode := range loop.nodes {
 			compositeID, err := workflowLoopNodeID(node.NodeInstanceID, bodyID)
 			if err != nil {
-				return validatedWorkflowGraph{}, fmt.Errorf("node %q: %w", node.NodeInstanceID, err)
+				return validatedWorkflowGraph{}, fmt.Errorf("节点 %q：%w", node.NodeInstanceID, err)
 			}
 			if _, exists := nodeTypes[compositeID]; exists {
-				return validatedWorkflowGraph{}, fmt.Errorf("node %q loop body id %q conflicts with another node", node.NodeInstanceID, bodyID)
+				return validatedWorkflowGraph{}, fmt.Errorf("节点 %q 的循环子节点标识 %q 与其他节点冲突", node.NodeInstanceID, bodyID)
 			}
 			nodeTypes[compositeID] = bodyNode.NodeType
 			descriptors[compositeID] = loop.descriptors[bodyID]
@@ -206,7 +238,7 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 	for _, edge := range graph.Edges {
 		for _, root := range roots {
 			if edge.TargetNodeInstanceID == root {
-				return validatedWorkflowGraph{}, fmt.Errorf("edge %q must not target an entryPoint", edge.EdgeID)
+				return validatedWorkflowGraph{}, workflowIssue("edge.entry_target", "连线不能指向工作流入口", "", edge.EdgeID, "targetNodeInstanceId")
 			}
 		}
 	}
@@ -228,11 +260,11 @@ func (a *App) validateWorkflowGraph(raw json.RawMessage) (validatedWorkflowGraph
 
 	canonical, err := json.Marshal(graph)
 	if err != nil {
-		return validatedWorkflowGraph{}, errors.New("encode workflow graph failed")
+		return validatedWorkflowGraph{}, errors.New("编码工作流定义失败")
 	}
 	nodeVersions, err := json.Marshal(versions)
 	if err != nil {
-		return validatedWorkflowGraph{}, errors.New("encode workflow node versions failed")
+		return validatedWorkflowGraph{}, errors.New("编码工作流节点版本失败")
 	}
 	if a.Plugins != nil {
 		definitions := []json.RawMessage{canonical}
@@ -269,17 +301,17 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&config) != nil || config.MaxIterations < 1 || config.MaxIterations > 100 ||
 		config.TimeoutSeconds < 1 || config.TimeoutSeconds > 86400 {
-		return validatedWorkflowLoop{}, errors.New("loop config is invalid")
+		return validatedWorkflowLoop{}, errors.New("循环配置无效")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return validatedWorkflowLoop{}, errors.New("loop config must contain exactly one JSON object")
+		return validatedWorkflowLoop{}, errors.New("循环配置必须是单个 JSON 对象")
 	}
 	ast, err := compileWorkflowCEL(config.ExitCondition)
 	if err != nil || ast.OutputType().TypeName() != "bool" {
-		return validatedWorkflowLoop{}, errors.New("exitCondition must compile to Boolean CEL")
+		return validatedWorkflowLoop{}, errors.New("退出条件必须是返回布尔值的 CEL 表达式")
 	}
 	if config.Body.SchemaVersion != 3 || len(config.Body.Nodes) < 2 || len(config.Body.Nodes) > maxWorkflowNodes || len(config.Body.Edges) > maxWorkflowEdges {
-		return validatedWorkflowLoop{}, errors.New("loop body must be a schema version 3 DAG with valid size limits")
+		return validatedWorkflowLoop{}, errors.New("循环子图必须是符合 Graph 3 格式及大小限制的有向无环图")
 	}
 
 	nodes := make(map[string]workflowGraphNode, len(config.Body.Nodes))
@@ -288,41 +320,41 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 	itemID, endID := "", ""
 	for _, bodyNode := range config.Body.Nodes {
 		if len([]rune(bodyNode.Label)) > 80 {
-			return validatedWorkflowLoop{}, errors.New("node label must not exceed 80 characters")
+			return validatedWorkflowLoop{}, workflowIssue("node.label_length", "节点名称不能超过 80 个字符", bodyNode.NodeInstanceID, "", "label")
 		}
 		if !workflowNodeIDPattern.MatchString(bodyNode.NodeInstanceID) || nodes[bodyNode.NodeInstanceID].NodeInstanceID != "" {
-			return validatedWorkflowLoop{}, fmt.Errorf("invalid or duplicate body nodeInstanceId %q", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, workflowIssue("node.id", "循环子节点标识无效或重复", bodyNode.NodeInstanceID, "", "nodeInstanceId")
 		}
 		desc, ok := catalog[bodyNode.NodeType]
 		if !ok || desc.Version != bodyNode.NodeVersion {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q has an unknown type or version", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, workflowIssue("node.unavailable", "循环子节点的类型或版本不可用", bodyNode.NodeInstanceID, "", "nodeType")
 		}
 		if desc.Kind == sdk.NodeKindTrigger || bodyNode.NodeType == "core.loop" || bodyNode.NodeType == "core.end" || desc.SideEffect == sdk.SideEffectHumanAction {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q is not supported inside a loop", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, fmt.Errorf("节点 %q 不支持用于循环子图", bodyNode.NodeInstanceID)
 		}
 		if bodyNode.NodeType == "core.loop_item" {
 			if itemID != "" {
-				return validatedWorkflowLoop{}, errors.New("loop body must contain exactly one core.loop_item")
+				return validatedWorkflowLoop{}, errors.New("循环子图必须包含且仅包含一个循环项节点")
 			}
 			itemID = bodyNode.NodeInstanceID
 		}
 		if bodyNode.NodeType == "core.loop_end" {
 			if endID != "" {
-				return validatedWorkflowLoop{}, errors.New("loop body must contain exactly one core.loop_end")
+				return validatedWorkflowLoop{}, errors.New("循环子图必须包含且仅包含一个循环结束节点")
 			}
 			endID = bodyNode.NodeInstanceID
 		}
 		if bodyNode.Position == nil {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q position is required", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, workflowIssue("node.position", "循环子节点缺少画布位置", bodyNode.NodeInstanceID, "", "position")
 		}
 		values, err := decodeJSONObject(bodyNode.Config)
 		if err != nil {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q config must be a JSON object", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, workflowIssue("node.config_object", "循环子节点配置必须是 JSON 对象", bodyNode.NodeInstanceID, "", "config")
 		}
 		secretFields, secretRequired := workflowSecretFields(desc.ConfigSchema)
 		for field := range secretFields {
 			if _, exists := values[field]; exists {
-				return validatedWorkflowLoop{}, fmt.Errorf("body node %q secret field %q must not be stored in graph config", bodyNode.NodeInstanceID, field)
+				return validatedWorkflowLoop{}, workflowIssue("node.secret_in_graph", "凭据必须通过加密凭据字段保存", bodyNode.NodeInstanceID, "", "config", field)
 			}
 			if secretRequired[field] {
 				requiredSecrets[workflowSecretKey{bodyNode.NodeInstanceID, field}] = true
@@ -330,18 +362,18 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 		}
 		ordinarySchema, err := ordinaryWorkflowConfigSchema(desc.ConfigSchema, secretFields)
 		if err != nil || validateWorkflowSchemaValue(ordinarySchema, values) != nil {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q config does not match its JSON Schema", bodyNode.NodeInstanceID)
+			return validatedWorkflowLoop{}, workflowIssue("node.config_schema", "循环子节点配置不符合字段要求", bodyNode.NodeInstanceID, "", "config")
 		}
 		if desc.ValidateConfig != nil {
 			if err := desc.ValidateConfig(bodyNode.Config); err != nil {
-				return validatedWorkflowLoop{}, fmt.Errorf("body node %q config is invalid: %w", bodyNode.NodeInstanceID, err)
+				return validatedWorkflowLoop{}, workflowIssue("node.config", "循环子节点配置无效："+err.Error(), bodyNode.NodeInstanceID, "", "config")
 			}
 		}
 		nodes[bodyNode.NodeInstanceID] = bodyNode
 		descriptors[bodyNode.NodeInstanceID] = desc
 	}
 	if itemID == "" || endID == "" {
-		return validatedWorkflowLoop{}, errors.New("loop body must contain exactly one core.loop_item and one core.loop_end")
+		return validatedWorkflowLoop{}, errors.New("循环子图必须包含且仅包含一个循环项节点和一个循环结束节点")
 	}
 	adjacency, reverse, err := validateWorkflowEdges(config.Body.Edges, nodes, descriptors, itemID)
 	if err != nil {
@@ -352,7 +384,7 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 	}
 	for id, next := range adjacency {
 		if len(next) == 0 && id != endID {
-			return validatedWorkflowLoop{}, fmt.Errorf("body node %q must lead to core.loop_end", id)
+			return validatedWorkflowLoop{}, fmt.Errorf("循环子节点 %q 必须连接到循环结束节点", id)
 		}
 	}
 	if err := validateWorkflowBindings(nodes, descriptors, adjacency, config.Body.Edges, map[string]bool{itemID: true}); err != nil {
@@ -371,7 +403,7 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 		return validatedWorkflowLoop{}, err
 	}
 	if workflowgraph.HasDecimalArithmetic(config.ExitCondition, decimalSchemas) {
-		return validatedWorkflowLoop{}, errors.New("Loop exit condition must not perform Decimal arithmetic")
+		return validatedWorkflowLoop{}, errors.New("循环退出条件不能进行 Decimal 算术")
 	}
 
 	return validatedWorkflowLoop{
@@ -383,7 +415,7 @@ func validateWorkflowLoop(node workflowGraphNode, catalog map[string]sdk.NodeDes
 func workflowLoopNodeID(loopID, bodyID string) (string, error) {
 	id := loopID + "." + bodyID
 	if !workflowNodeIDPattern.MatchString(id) {
-		return "", fmt.Errorf("loop body node id %q is too long", bodyID)
+		return "", fmt.Errorf("循环子节点标识 %q 过长", bodyID)
 	}
 	return id, nil
 }
@@ -399,35 +431,35 @@ func validateWorkflowEdges(edges []workflowGraphEdge, nodes map[string]workflowG
 	}
 	for _, edge := range edges {
 		if len([]rune(edge.Label)) > 80 {
-			return nil, nil, errors.New("edge label must not exceed 80 characters")
+			return nil, nil, workflowIssue("edge.label_length", "连线名称不能超过 80 个字符", "", edge.EdgeID, "label")
 		}
 		if !workflowNodeIDPattern.MatchString(edge.EdgeID) || seenIDs[edge.EdgeID] {
-			return nil, nil, fmt.Errorf("invalid or duplicate edgeId %q", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.id", "连线标识无效或重复", "", edge.EdgeID, "edgeId")
 		}
 		seenIDs[edge.EdgeID] = true
 		if nodes[edge.SourceNodeInstanceID].NodeInstanceID == "" || nodes[edge.TargetNodeInstanceID].NodeInstanceID == "" {
-			return nil, nil, fmt.Errorf("edge %q references an unknown node", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.node", "连线引用了不存在的节点", "", edge.EdgeID, "sourceNodeInstanceId")
 		}
 		if edge.SourceNodeInstanceID == edge.TargetNodeInstanceID {
-			return nil, nil, fmt.Errorf("edge %q must not create a self loop", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.self_loop", "连线不能指向同一节点", "", edge.EdgeID, "targetNodeInstanceId")
 		}
 		_, sourcePorts := workflowPorts(descriptors[edge.SourceNodeInstanceID])
 		targetPorts, _ := workflowPorts(descriptors[edge.TargetNodeInstanceID])
 		if !containsString(sourcePorts, edge.SourcePort) || !containsString(targetPorts, edge.TargetPort) {
-			return nil, nil, fmt.Errorf("edge %q references an invalid port", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.port", "连线端口不可用", "", edge.EdgeID, "sourcePort")
 		}
 		if edge.TargetNodeInstanceID == triggerID {
-			return nil, nil, fmt.Errorf("edge %q must not target the main trigger", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.trigger_target", "连线不能指向主触发节点", "", edge.EdgeID, "targetNodeInstanceId")
 		}
 		identity := strings.Join([]string{edge.SourceNodeInstanceID, edge.SourcePort, edge.TargetNodeInstanceID, edge.TargetPort}, "\x00")
 		if seenEdges[identity] {
-			return nil, nil, fmt.Errorf("edge %q duplicates an existing connection", edge.EdgeID)
+			return nil, nil, workflowIssue("edge.duplicate", "此连接已存在", "", edge.EdgeID, "sourceNodeInstanceId")
 		}
 		seenEdges[identity] = true
 		if expression := strings.TrimSpace(edge.Condition); expression != "" {
 			ast, err := compileWorkflowCEL(expression)
 			if err != nil || ast.OutputType().TypeName() != "bool" {
-				return nil, nil, fmt.Errorf("edge %q condition must compile to Boolean CEL", edge.EdgeID)
+				return nil, nil, workflowIssue("edge.condition", "连线条件必须是返回布尔值的 CEL 表达式", "", edge.EdgeID, "condition")
 			}
 		}
 		adjacency[edge.SourceNodeInstanceID] = append(adjacency[edge.SourceNodeInstanceID], edge.TargetNodeInstanceID)
@@ -460,7 +492,7 @@ func validateWorkflowTopology(nodes map[string]workflowGraphNode, adjacency, rev
 		}
 	}
 	if visited != len(nodes) {
-		return errors.New("workflow graph must not contain arbitrary cycles")
+		return errors.New("工作流不能包含循环连线，请使用循环节点")
 	}
 	reachable := map[string]bool{}
 	queue = append([]string(nil), roots...)
@@ -474,7 +506,7 @@ func validateWorkflowTopology(nodes map[string]workflowGraphNode, adjacency, rev
 		queue = append(queue, adjacency[id]...)
 	}
 	if len(reachable) != len(nodes) {
-		return errors.New("workflow graph contains nodes unreachable from its entryPoints")
+		return errors.New("存在无法从入口到达的节点")
 	}
 	return nil
 }
@@ -485,58 +517,58 @@ func validateWorkflowBindings(nodes map[string]workflowGraphNode, descriptors ma
 		if !roots[nodeID] {
 			for field := range required {
 				if _, ok := node.InputBindings[field]; !ok {
-					return fmt.Errorf("node %q requires input binding %q", nodeID, field)
+					return workflowIssue("binding.invalid", "缺少必填输入绑定", nodeID, "", "inputBindings", field)
 				}
 			}
 		}
 		for field, binding := range node.InputBindings {
 			targetSchema, ok := workflowSchemaField(descriptors[nodeID].InputSchema, []string{field})
 			if !ok {
-				return fmt.Errorf("node %q input binding %q is not declared by its input schema", nodeID, field)
+				return workflowIssue("binding.invalid", "输入字段未在 Schema 中声明", nodeID, "", "inputBindings", field)
 			}
 			switch binding.Kind {
 			case "field":
 				if binding.NodeInstanceID == "" || len(binding.FieldPath) == 0 || len(binding.Value) != 0 || binding.Expression != "" {
-					return fmt.Errorf("node %q input binding %q has invalid field mapping", nodeID, field)
+					return workflowIssue("binding.invalid", "输出字段绑定格式无效", nodeID, "", "inputBindings", field)
 				}
 				if nodes[binding.NodeInstanceID].NodeInstanceID == "" || !workflowPathExists(adjacency, binding.NodeInstanceID, nodeID) {
-					return fmt.Errorf("node %q input binding %q must reference a topological upstream node", nodeID, field)
+					return workflowIssue("binding.invalid", "输入绑定必须引用上游节点", nodeID, "", "inputBindings", field)
 				}
 				sourceSchema, ok := workflowSchemaField(descriptors[binding.NodeInstanceID].OutputSchema, binding.FieldPath)
 				if !ok || !workflowSchemaTypesCompatible(sourceSchema, targetSchema) {
-					return fmt.Errorf("node %q input binding %q has an unknown or incompatible field path", nodeID, field)
+					return workflowIssue("binding.invalid", "输出字段路径不存在或类型不兼容", nodeID, "", "inputBindings", field)
 				}
 			case "literal":
 				if binding.NodeInstanceID != "" || len(binding.FieldPath) != 0 || len(binding.Value) == 0 || binding.Expression != "" {
-					return fmt.Errorf("node %q input binding %q has invalid literal mapping", nodeID, field)
+					return workflowIssue("binding.invalid", "固定值绑定格式无效", nodeID, "", "inputBindings", field)
 				}
 				var value any
 				if json.Unmarshal(binding.Value, &value) != nil || validateWorkflowSchemaValue(schemaFragment(targetSchema), value) != nil {
-					return fmt.Errorf("node %q input binding %q literal has an incompatible type", nodeID, field)
+					return workflowIssue("binding.invalid", "固定值类型不符合字段要求", nodeID, "", "inputBindings", field)
 				}
 			case "cel":
 				if binding.NodeInstanceID != "" || len(binding.FieldPath) != 0 || len(binding.Value) != 0 || strings.TrimSpace(binding.Expression) == "" {
-					return fmt.Errorf("node %q input binding %q has invalid CEL mapping", nodeID, field)
+					return workflowIssue("binding.invalid", "CEL 绑定格式无效", nodeID, "", "inputBindings", field)
 				}
 				ast, err := compileWorkflowCEL(binding.Expression)
 				if err != nil || !workflowCELTypeCompatible(ast.OutputType().TypeName(), targetSchema) {
-					return fmt.Errorf("node %q input binding %q CEL does not compile to a compatible type", nodeID, field)
+					return workflowIssue("binding.invalid", "CEL 表达式无效或返回类型不兼容", nodeID, "", "inputBindings", field)
 				}
 				expr, err := workflowCELExpr(ast)
 				if err != nil {
-					return fmt.Errorf("node %q input binding %q CEL does not compile to a compatible type", nodeID, field)
+					return workflowIssue("binding.invalid", "CEL 表达式无效或返回类型不兼容", nodeID, "", "inputBindings", field)
 				}
 				if celHasArithmetic(expr) && schemaBool(targetSchema, "x-coinsphere-decimal") {
-					return fmt.Errorf("node %q input binding %q must not perform Decimal arithmetic", nodeID, field)
+					return workflowIssue("binding.invalid", "金融数值绑定不允许使用 CEL 浮点算术", nodeID, "", "inputBindings", field)
 				}
 			case "input":
 				if binding.NodeInstanceID != "" || len(binding.FieldPath) == 0 || len(binding.Value) != 0 || binding.Expression != "" {
-					return fmt.Errorf("node %q has an invalid entry input binding", nodeID)
+					return workflowIssue("binding.entry", "入口输入绑定格式无效", nodeID, "", "inputBindings", field)
 				}
 			case "":
-				return fmt.Errorf("node %q input binding %q kind is required", nodeID, field)
+				return workflowIssue("binding.invalid", "请选择输入绑定方式", nodeID, "", "inputBindings", field)
 			default:
-				return fmt.Errorf("node %q input binding %q has unknown kind %q", nodeID, field, binding.Kind)
+				return workflowIssue("binding.kind", "输入绑定方式无效", nodeID, "", "inputBindings", field)
 			}
 		}
 	}
@@ -614,7 +646,7 @@ func validateWorkflowExpressions(nodes map[string]workflowGraphNode, descriptors
 			return err
 		}
 		if workflowgraph.HasDecimalArithmetic(expression, schemas) {
-			return errors.New("CEL must not perform Decimal arithmetic")
+			return errors.New("CEL 表达式不能进行 Decimal 算术")
 		}
 		return nil
 	}
@@ -622,7 +654,7 @@ func validateWorkflowExpressions(nodes map[string]workflowGraphNode, descriptors
 		for field, binding := range node.InputBindings {
 			if binding.Kind == "cel" {
 				if err := validate(binding.Expression, id, false); err != nil {
-					return fmt.Errorf("node %q binding %q: %w", id, field, err)
+					return workflowIssue("binding.expression", "输入表达式无效："+err.Error(), id, "", "inputBindings", field)
 				}
 			}
 			if binding.Kind == "input" {
@@ -631,7 +663,7 @@ func validateWorkflowExpressions(nodes map[string]workflowGraphNode, descriptors
 						source, ok := workflowSchemaField(descriptors[root].InputSchema, binding.FieldPath)
 						target, declared := workflowSchemaField(descriptors[id].InputSchema, []string{field})
 						if !ok || !declared || !workflowSchemaTypesCompatible(source, target) {
-							return fmt.Errorf("node %q binding %q has an unavailable entry input field", id, field)
+							return workflowIssue("binding.entry", "输入绑定引用了不可用的入口输入字段", id, "", "inputBindings", field)
 						}
 					}
 				}
@@ -641,7 +673,7 @@ func validateWorkflowExpressions(nodes map[string]workflowGraphNode, descriptors
 	for _, edge := range edges {
 		if strings.TrimSpace(edge.Condition) != "" {
 			if err := validate(edge.Condition, edge.SourceNodeInstanceID, true); err != nil {
-				return fmt.Errorf("edge %q: %w", edge.EdgeID, err)
+				return workflowIssue("edge.condition", "连线条件无效："+err.Error(), "", edge.EdgeID, "condition")
 			}
 		}
 	}
@@ -677,7 +709,7 @@ func validateWorkflowSchemaValue(raw json.RawMessage, value any) error {
 func decodeJSONObject(raw json.RawMessage) (map[string]any, error) {
 	var value map[string]any
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil || value == nil {
-		return nil, errors.New("not an object")
+		return nil, errors.New("值不是 JSON 对象")
 	}
 	return value, nil
 }

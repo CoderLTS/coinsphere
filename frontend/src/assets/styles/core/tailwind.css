@@ -26,15 +26,15 @@
   --art-gray-600: #7987a1;
   --art-gray-700: #4d5875;
   --art-gray-800: #383853;
-  --art-gray-900: #323251;
+  --art-gray-900: #1f2a3d;
 
   /* Border Colors */
   --art-card-border: rgb(0 0 0 / 0.08);
-  --default-border: #e2e8ee;
+  --default-border: #dee4ee;
   --default-border-dashed: #dbdfe9;
 
   /* Background Colors */
-  --default-bg-color: #fafbfc;
+  --default-bg-color: #f4f6fa;
   --default-box-color: #fff;
 
   /* Hover Color */
@@ -52,8 +52,8 @@
   --workflow-panel-bg: #fff;
   --workflow-panel-raised: #f9fafc;
   --workflow-panel-soft: #f1f4f8;
-  --workflow-panel-border: #dfe4ec;
-  --workflow-panel-text: #263247;
+  --workflow-panel-border: #dee4ee;
+  --workflow-panel-text: #1f2a3d;
   --workflow-panel-muted: #78859a;
   --workflow-edge-color: #98a4b6;
 }

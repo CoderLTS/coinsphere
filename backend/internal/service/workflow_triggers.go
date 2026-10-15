@@ -119,7 +119,7 @@ func (s workflowTriggerState) Load(ctx context.Context) (json.RawMessage, error)
 }
 func (s workflowTriggerState) Save(ctx context.Context, state json.RawMessage) error {
 	if s.stateMode != sdk.StatePersistent || len(state) == 0 || len(state) > maxWorkflowGraphBytes || !json.Valid(state) {
-		return errors.New("invalid persistent trigger state")
+		return errors.New("持久触发器状态无效")
 	}
 	return s.app.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.app.lockTriggerLease(tx, s.lease); err != nil {
@@ -173,7 +173,7 @@ func (a *App) startWorkflowTrigger(parent context.Context, w db.Workflow, revisi
 	node := graph.nodes[revision.MainTriggerNodeID]
 	desc, handler, ok := a.Plugins.Trigger(node.NodeType)
 	if !ok {
-		return fmt.Errorf("trigger handler %q unavailable", node.NodeType)
+		return fmt.Errorf("触发器 %q 不可用", node.NodeType)
 	}
 	lease := triggerLease{w.ID, revisionID, security.RandomToken()}
 	claimed := false

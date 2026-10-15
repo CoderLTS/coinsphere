@@ -1,6 +1,6 @@
 # CoinSphere
 
-CoinSphere 是以工作流为核心、可信源码插件扩展业务的个人系统，采用 Vue/ArtDesignPro、单实例 Go 和 PostgreSQL 16。Core 5 / SDK 5 / Graph 3 提供通用编排、事务与恢复；业务数据和页面由插件拥有，无多用户、角色权限、分享、商店或兼容层。
+CoinSphere 是以工作流为核心、可信源码插件扩展业务的个人系统，采用 Vue/ArtDesignPro、单实例 Go 和 PostgreSQL 16。Core 1.0.0 / SDK 1 / Graph 3 提供通用编排、事务与恢复；业务数据和页面由插件拥有，无多用户、角色权限、分享、商店或兼容层。
 
 源码仓库：[CoderLTS/coinsphere](https://github.com/CoderLTS/coinsphere)。项目标识为 `coinsphere`，Go 模块为 `coinsphere/backend`。
 

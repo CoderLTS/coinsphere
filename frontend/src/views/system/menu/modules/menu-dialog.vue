@@ -1,12 +1,24 @@
 <template>
-  <ElDialog
-    :title="editData?.id ? '编辑菜单' : '新增菜单'"
-    :model-value="visible"
-    width="620px"
-    align-center
-    @update:model-value="emit('update:visible', false)"
+  <section
+    v-if="visible"
+    class="menu-properties"
+    role="region"
+    :aria-label="editData?.id ? '编辑菜单' : '新增菜单'"
   >
-    <ElForm ref="formRef" :model="form" :rules="rules" label-width="96px">
+    <h2>{{ editData?.id ? '编辑菜单' : '新增菜单' }}</h2>
+    <p v-if="editData?.path"
+      >页面地址：<code>{{ editData.path }}</code></p
+    >
+    <p>调整菜单位置不会改变页面地址。</p>
+    <ElAlert v-if="error" :title="error" type="error" :closable="false" />
+    <ElForm
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      :disabled="saving"
+      label-position="top"
+      size="small"
+    >
       <ElFormItem label="页面" prop="page">
         <ElSelect
           v-model="selectedPage"
@@ -54,11 +66,17 @@
         <ElFormItem label="固定标签"><ElSwitch v-model="form.fixedTab" /></ElFormItem>
       </template>
     </ElForm>
-    <template #footer>
-      <ElButton @click="emit('update:visible', false)">取消</ElButton>
-      <ElButton type="primary" :disabled="loadingPages" @click="submit">确定</ElButton>
-    </template>
-  </ElDialog>
+    <footer>
+      <ElButton :disabled="saving" @click="emit('update:visible', false)">取消</ElButton>
+      <ElButton
+        type="primary"
+        :loading="saving"
+        :disabled="loadingPages || Boolean(pageError)"
+        @click="submit"
+        >保存菜单</ElButton
+      >
+    </footer>
+  </section>
 </template>
 <script setup lang="ts">
   import type { FormInstance, FormRules } from 'element-plus'
@@ -84,6 +102,8 @@
     visible: boolean
     editData?: AppRouteRecord | null
     menuTree: AppRouteRecord[]
+    saving?: boolean
+    error?: string
   }>()
   const emit = defineEmits<{
     (event: 'update:visible', visible: boolean): void
@@ -140,10 +160,14 @@
     if (page && !form.title) form.title = page.title
     if (page && !form.icon) form.icon = page.icon
   }
+  let pageRequest = 0
   watch(
-    () => props.visible,
-    async (visible) => {
-      if (!visible) return
+    () => [props.visible, props.editData] as const,
+    async ([visible]) => {
+      if (!visible) {
+        ++pageRequest
+        return
+      }
       Object.assign(form, defaults(), { id: undefined })
       const row = props.editData
       if (row)
@@ -153,7 +177,7 @@
           pluginId: row.pluginId || '',
           contributionType: row.contributionType || '',
           pageKey: row.pageKey || '',
-          title: row.meta.title,
+          title: formatMenuTitle(row.meta.title),
           icon: row.meta.icon || '',
           sort: row.meta.sort ?? 10,
           isActive: row.meta.isEnable !== false,
@@ -165,8 +189,11 @@
       selectedPage.value = form.pluginId ? pageKey(form) : ''
       pageError.value = ''
       loadingPages.value = true
+      const current = ++pageRequest
       try {
-        pages.value = await fetchMenuPages()
+        const catalog = await fetchMenuPages()
+        if (current !== pageRequest) return
+        pages.value = catalog
         if (row?.pluginId && !pages.value.some((page) => pageKey(page) === selectedPage.value)) {
           pages.value.push({
             pluginId: form.pluginId,
@@ -178,17 +205,33 @@
           })
         }
       } catch {
-        pageError.value = '页面目录加载失败，请关闭后重试'
+        if (current === pageRequest) pageError.value = '页面目录加载失败，请重新选择菜单重试'
       } finally {
-        loadingPages.value = false
+        if (current === pageRequest) loadingPages.value = false
       }
       await nextTick()
       formRef.value?.clearValidate()
     }
   )
   const submit = async () => {
-    if (pageError.value || !formRef.value) return
-    await formRef.value.validate()
+    if (props.saving || loadingPages.value || pageError.value || !formRef.value) return
+    if (!(await formRef.value.validate().catch(() => false))) return
     emit('submit', { ...form, parentId: form.parentId || null })
   }
 </script>
+<style scoped>
+  h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+  }
+  p {
+    color: var(--el-text-color-secondary);
+    overflow-wrap: anywhere;
+  }
+  footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 12px;
+  }
+</style>

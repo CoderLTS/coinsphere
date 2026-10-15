@@ -113,7 +113,7 @@ func TestModelNodeReadsConfigurationOncePerCall(t *testing.T) {
 	if _, err := a.PatchAIModel(ctx, model.ID, AIModelPatchPayload{IsEnabled: &disabled}, scope); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := action.Execute(ctx, request); err == nil || !strings.Contains(err.Error(), "disabled") {
+	if _, err := action.Execute(ctx, request); err == nil || !strings.Contains(err.Error(), "已停用") {
 		t.Fatal("disabled model accepted", err)
 	}
 	request.Config = json.RawMessage(`{"modelId":999999}`)

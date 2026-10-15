@@ -65,7 +65,7 @@ type assistantModelRuntime struct {
 func (a *runtime) ListAIModels(ctx context.Context) ([]AIModelView, error) {
 	var models []AIModelConfig
 	if err := a.DB.WithContext(ctx).Order("priority, id").Find(&models).Error; err != nil {
-		return nil, errors.New("list AI models failed")
+		return nil, errors.New("读取 AI 模型列表失败")
 	}
 	counts := map[int64]int64{}
 	if len(models) > 0 {
@@ -75,7 +75,7 @@ func (a *runtime) ListAIModels(ctx context.Context) ([]AIModelView, error) {
 		}
 		if err := a.DB.WithContext(ctx).Model(&AssistantSession{}).
 			Select("model_config_id, COUNT(*) AS count").Group("model_config_id").Scan(&rows).Error; err != nil {
-			return nil, errors.New("count AI model sessions failed")
+			return nil, errors.New("读取 AI 模型会话数量失败")
 		}
 		for _, row := range rows {
 			counts[row.ModelConfigID] = row.Count
@@ -91,7 +91,7 @@ func (a *runtime) ListAIModels(ctx context.Context) ([]AIModelView, error) {
 func (a *runtime) ListAssistantModels(ctx context.Context) ([]AssistantModelOption, error) {
 	var models []AIModelConfig
 	if err := a.DB.WithContext(ctx).Where("is_enabled = ?", true).Order("priority, id").Find(&models).Error; err != nil {
-		return nil, errors.New("list assistant models failed")
+		return nil, errors.New("读取助手模型列表失败")
 	}
 	result := make([]AssistantModelOption, len(models))
 	for index, model := range models {
@@ -109,7 +109,7 @@ func (a *runtime) createAIModel(ctx context.Context, payload AIModelUpsertPayloa
 		return AIModelView{}, err
 	}
 	if err := a.DB.WithContext(ctx).Create(&model).Error; err != nil {
-		return AIModelView{}, errors.New("create AI model failed")
+		return AIModelView{}, errors.New("创建 AI 模型失败")
 	}
 	return a.aiModelView(model, 0), nil
 }
@@ -132,7 +132,7 @@ func (a *runtime) updateAIModel(ctx context.Context, modelID int64, payload AIMo
 		"priority": model.Priority, "timeout_ms": model.TimeoutMS, "updated_by": model.UpdatedBy, "updated_at": model.UpdatedAt,
 	}
 	if err := a.DB.WithContext(ctx).Model(&current).Updates(updates).Error; err != nil {
-		return AIModelView{}, errors.New("update AI model failed")
+		return AIModelView{}, errors.New("更新 AI 模型失败")
 	}
 	model.ID, model.CreatedAt = current.ID, current.CreatedAt
 	var count int64
@@ -145,16 +145,16 @@ func (a *runtime) patchAIModel(ctx context.Context, modelID int64, payload AIMod
 		return AIModelView{}, ErrPermission
 	}
 	if payload.IsEnabled == nil {
-		return AIModelView{}, errors.New("isEnabled is required")
+		return AIModelView{}, errors.New("请选择是否启用")
 	}
 	result := a.DB.WithContext(ctx).Model(&AIModelConfig{}).Where("id = ?", modelID).Updates(map[string]any{
 		"is_enabled": *payload.IsEnabled, "updated_by": principal.UserID, "updated_at": time.Now().UTC(),
 	})
 	if result.Error != nil {
-		return AIModelView{}, errors.New("update AI model status failed")
+		return AIModelView{}, errors.New("更新 AI 模型状态失败")
 	}
 	if result.RowsAffected == 0 {
-		return AIModelView{}, fmt.Errorf("%w: AI model", ErrNotFound)
+		return AIModelView{}, fmt.Errorf("%w：AI 模型", ErrNotFound)
 	}
 	models, err := a.ListAIModels(ctx)
 	if err != nil {
@@ -165,23 +165,23 @@ func (a *runtime) patchAIModel(ctx context.Context, modelID int64, payload AIMod
 			return model, nil
 		}
 	}
-	return AIModelView{}, fmt.Errorf("%w: AI model", ErrNotFound)
+	return AIModelView{}, fmt.Errorf("%w：AI 模型", ErrNotFound)
 }
 
 func (a *runtime) deleteAIModel(ctx context.Context, modelID int64) error {
 	var count int64
 	if err := a.DB.WithContext(ctx).Model(&AssistantSession{}).Where("model_config_id = ?", modelID).Count(&count).Error; err != nil {
-		return errors.New("count AI model sessions failed")
+		return errors.New("读取 AI 模型会话数量失败")
 	}
 	if count > 0 {
-		return fmt.Errorf("%w: AI model is referenced by assistant sessions", ErrConflict)
+		return fmt.Errorf("%w：AI 模型仍被助手会话引用", ErrConflict)
 	}
 	result := a.DB.WithContext(ctx).Delete(&AIModelConfig{}, modelID)
 	if result.Error != nil {
-		return errors.New("delete AI model failed")
+		return errors.New("删除 AI 模型失败")
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: AI model", ErrNotFound)
+		return fmt.Errorf("%w：AI 模型", ErrNotFound)
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func (a *runtime) ValidateAIModel(ctx context.Context, modelID int64) (M, error)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, runtime.endpoint("models"), nil)
 	if err != nil {
-		return nil, errors.New("build AI model validation request failed")
+		return nil, errors.New("创建 AI 模型验证请求失败")
 	}
 	request.Header.Set("Accept", "application/json")
 	runtime.authorize(request)
@@ -230,16 +230,16 @@ func (a *runtime) buildAIModel(payload AIModelUpsertPayload, current *AIModelCon
 		return AIModelConfig{}, err
 	}
 	if displayName == "" || utf8.RuneCountInString(displayName) > 120 {
-		return AIModelConfig{}, errors.New("displayName must contain 1 to 120 characters")
+		return AIModelConfig{}, errors.New("显示名称须为 1 至 120 个字符")
 	}
 	if modelName == "" || utf8.RuneCountInString(modelName) > 255 {
-		return AIModelConfig{}, errors.New("modelName must contain 1 to 255 characters")
+		return AIModelConfig{}, errors.New("模型名称须为 1 至 255 个字符")
 	}
 	if priority < 1 || priority > 9999 {
-		return AIModelConfig{}, errors.New("priority must be between 1 and 9999")
+		return AIModelConfig{}, errors.New("优先级须为 1 至 9999")
 	}
 	if timeoutMS < 1000 || timeoutMS > 300000 {
-		return AIModelConfig{}, errors.New("timeoutMs must be between 1000 and 300000")
+		return AIModelConfig{}, errors.New("超时时间须为 1000 至 300000 毫秒")
 	}
 	enabled := true
 	ciphertext := ""
@@ -279,11 +279,11 @@ func (a *runtime) loadAssistantModel(ctx context.Context, modelID int64, require
 		return assistantModelRuntime{}, aiModelLookupError(err)
 	}
 	if requireEnabled && !model.IsEnabled {
-		return assistantModelRuntime{}, errors.New("AI model is disabled")
+		return assistantModelRuntime{}, errors.New("AI 模型已停用")
 	}
 	key, err := a.host.Credentials.Decrypt(model.APIKeyCiphertext)
 	if err != nil {
-		return assistantModelRuntime{}, errors.New("decrypt AI model API key failed")
+		return assistantModelRuntime{}, errors.New("解密 AI 模型密钥失败")
 	}
 	return assistantModelRuntime{
 		ID: model.ID, BaseURL: model.BaseURL, ModelName: model.ModelName,
@@ -306,27 +306,27 @@ func (runtime assistantModelRuntime) client(timeout time.Duration) *http.Client 
 	transport.Proxy = nil
 	return &http.Client{
 		Transport: transport, Timeout: timeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("AI model redirects are disabled") },
+		CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("AI 模型请求不允许重定向") },
 	}
 }
 
 func normalizeAIBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" || len(value) > 1000 {
-		return "", errors.New("baseUrl must contain 1 to 1000 characters")
+		return "", errors.New("服务地址须为 1 至 1000 个字符")
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("baseUrl must be an absolute HTTP or HTTPS URL")
+		return "", errors.New("服务地址须为完整的 HTTP 或 HTTPS URL")
 	}
 	if safehttp.IsBinanceDomain(parsed.Hostname()) {
-		return "", errors.New("AI endpoints cannot target Binance")
+		return "", errors.New("AI 服务地址不能指向币安")
 	}
 	if parsed.User != nil {
-		return "", errors.New("baseUrl must not contain embedded credentials")
+		return "", errors.New("服务地址不能内嵌凭据")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("baseUrl must not contain a query or fragment")
+		return "", errors.New("服务地址不能包含查询参数或片段")
 	}
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
@@ -337,16 +337,16 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(value)) > limit {
-		return nil, errors.New("response exceeds size limit")
+		return nil, errors.New("响应超过大小限制")
 	}
 	return value, nil
 }
 
 func aiModelLookupError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("%w: AI model", ErrNotFound)
+		return fmt.Errorf("%w：AI 模型", ErrNotFound)
 	}
-	return errors.New("load AI model failed")
+	return errors.New("读取 AI 模型失败")
 }
 
 func (a *runtime) CreateAIModel(ctx context.Context, payload AIModelUpsertPayload, principal sdk.SystemScope) (AIModelView, error) {

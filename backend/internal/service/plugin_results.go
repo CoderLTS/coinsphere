@@ -63,7 +63,7 @@ func (a *App) directResultScopeTx(ctx context.Context, tx *gorm.DB, pluginID, pa
 	}
 	var scopeObject, filterObject any
 	if json.Unmarshal(scope, &scopeObject) != nil || json.Unmarshal(filters, &filterObject) != nil || validateWorkflowSchemaValue(page.ScopeSchema, scopeObject) != nil || validateWorkflowSchemaValue(page.FilterSchema, filterObject) != nil {
-		return sdk.ResultScope{}, errors.New("result filters do not match the plugin schema")
+		return sdk.ResultScope{}, errors.New("结果筛选不符合插件 Schema")
 	}
 	resources, err := page.Resources(scope)
 	if err != nil {
@@ -81,7 +81,7 @@ func (a *App) directResultScopeTx(ctx context.Context, tx *gorm.DB, pluginID, pa
 		}
 	}
 	if err := page.ValidateScope(ctx, tx, scope); err != nil {
-		return sdk.ResultScope{}, fmt.Errorf("%w: result resource", ErrNotFound)
+		return sdk.ResultScope{}, fmt.Errorf("%w：结果资源", ErrNotFound)
 	}
 	return sdk.ResultScope{PluginID: pluginID, PageKey: pageKey, Scope: scope, Filters: filters, Resources: resources, UserID: p.User.ID, AllowedActions: append([]string(nil), page.Actions...)}, nil
 }
@@ -98,24 +98,24 @@ func resultQueryObjects(page sdk.ResultPageDescriptor, query url.Values) (json.R
 			target = filters
 		}
 		if field == nil || len(values) != 1 || len(values[0]) > 4096 {
-			return nil, nil, errors.New("unknown or repeated result filter")
+			return nil, nil, errors.New("结果筛选字段未知或重复")
 		}
 		var value any = values[0]
 		switch field["type"] {
 		case "integer":
 			parsed, err := strconv.ParseInt(values[0], 10, 64)
 			if err != nil {
-				return nil, nil, errors.New("result integer filter is invalid")
+				return nil, nil, errors.New("结果整数筛选无效")
 			}
 			value = parsed
 		case "boolean":
 			if values[0] != "true" && values[0] != "false" {
-				return nil, nil, errors.New("result boolean filter is invalid")
+				return nil, nil, errors.New("结果布尔筛选无效")
 			}
 			value = values[0] == "true"
 		case "number", "object", "array":
 			if json.Unmarshal([]byte(values[0]), &value) != nil {
-				return nil, nil, errors.New("result JSON filter is invalid")
+				return nil, nil, errors.New("结果 JSON 筛选无效")
 			}
 		}
 		target[key] = value

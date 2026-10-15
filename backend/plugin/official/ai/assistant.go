@@ -62,9 +62,9 @@ func (a *runtime) createAssistantSession(ctx context.Context, payload AssistantS
 		var model AIModelConfig
 		if err := a.DB.WithContext(ctx).Where("is_enabled = ?", true).Order("priority, id").First(&model).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return AssistantSessionView{}, fmt.Errorf("%w: no enabled AI model", ErrConflict)
+				return AssistantSessionView{}, fmt.Errorf("%w：没有已启用的 AI 模型", ErrConflict)
 			}
-			return AssistantSessionView{}, errors.New("load default AI model failed")
+			return AssistantSessionView{}, errors.New("读取默认 AI 模型失败")
 		}
 		modelID = model.ID
 	}
@@ -76,7 +76,7 @@ func (a *runtime) createAssistantSession(ctx context.Context, payload AssistantS
 		title = "新会话"
 	}
 	if utf8.RuneCountInString(title) > 160 {
-		return AssistantSessionView{}, errors.New("title must not exceed 160 characters")
+		return AssistantSessionView{}, errors.New("标题不能超过 160 个字符")
 	}
 	now := time.Now().UTC()
 	session := AssistantSession{
@@ -84,7 +84,7 @@ func (a *runtime) createAssistantSession(ctx context.Context, payload AssistantS
 		CreatedAt: now, UpdatedAt: now, LastMessageAt: now,
 	}
 	if err := a.DB.WithContext(ctx).Create(&session).Error; err != nil {
-		return AssistantSessionView{}, errors.New("create assistant session failed")
+		return AssistantSessionView{}, errors.New("创建助手会话失败")
 	}
 	return a.assistantSessionView(ctx, session)
 }
@@ -96,7 +96,7 @@ func (a *runtime) ListAssistantSessions(ctx context.Context, principal sdk.Syste
 	var sessions []AssistantSession
 	if err := a.DB.WithContext(ctx).Where("user_id = ?", principal.UserID).
 		Order("last_message_at DESC, id DESC").Limit(100).Find(&sessions).Error; err != nil {
-		return nil, errors.New("list assistant sessions failed")
+		return nil, errors.New("读取助手会话列表失败")
 	}
 	result := make([]AssistantSessionView, 0, len(sessions))
 	for _, session := range sessions {
@@ -123,7 +123,7 @@ func (a *runtime) deleteAssistantSession(ctx context.Context, sessionID int64, p
 		return err
 	}
 	if err := a.DB.WithContext(ctx).Delete(&session).Error; err != nil {
-		return errors.New("delete assistant session failed")
+		return errors.New("删除助手会话失败")
 	}
 	return nil
 }
@@ -134,7 +134,7 @@ func (a *runtime) ListAssistantMessages(ctx context.Context, sessionID int64, pr
 	}
 	var messages []AssistantMessage
 	if err := a.DB.WithContext(ctx).Where("session_id = ?", sessionID).Order("id").Limit(500).Find(&messages).Error; err != nil {
-		return nil, errors.New("list assistant messages failed")
+		return nil, errors.New("读取助手消息列表失败")
 	}
 	result := make([]AssistantMessageView, len(messages))
 	for index := range messages {
@@ -150,7 +150,7 @@ func (a *runtime) StreamAssistantSession(ctx context.Context, sessionID int64, p
 	}
 	text := strings.TrimSpace(payload.Text)
 	if text == "" || utf8.RuneCountInString(text) > assistantInputLimit {
-		return fmt.Errorf("message must contain 1 to %d characters", assistantInputLimit)
+		return fmt.Errorf("消息须为 1 至 %d 个字符", assistantInputLimit)
 	}
 	runtime, err := a.loadAssistantModel(ctx, session.ModelConfigID, true)
 	if err != nil {
@@ -165,7 +165,7 @@ func (a *runtime) StreamAssistantSession(ctx context.Context, sessionID int64, p
 			return err
 		}
 		if err := tx.Create(&userMessage).Error; err != nil {
-			return errors.New("create assistant user message failed")
+			return errors.New("保存助手用户消息失败")
 		}
 		updates := map[string]any{"updated_at": now, "last_message_at": now}
 		if session.Title == "新会话" {
@@ -190,7 +190,7 @@ func (a *runtime) StreamAssistantSession(ctx context.Context, sessionID int64, p
 	}
 	if strings.TrimSpace(run.Content) == "" {
 		if run.Workflow == nil {
-			return errors.New("AI model returned an empty response")
+			return errors.New("AI 模型返回了空响应")
 		}
 		run.Content = fmt.Sprintf("工作流已创建：%s（ID %d），当前状态为 inactive。编辑地址：%s", run.Workflow.Name, run.Workflow.WorkflowID, run.Workflow.EditURL)
 	}
@@ -203,7 +203,7 @@ func (a *runtime) StreamAssistantSession(ctx context.Context, sessionID int64, p
 			return err
 		}
 		if err := tx.Create(&assistantMessage).Error; err != nil {
-			return errors.New("create assistant response failed")
+			return errors.New("保存助手回复失败")
 		}
 		return tx.Model(&AssistantSession{}).Where("id = ?", session.ID).Updates(map[string]any{
 			"updated_at": assistantMessage.CreatedAt, "last_message_at": assistantMessage.CreatedAt,
@@ -227,9 +227,9 @@ func (a *runtime) requireAssistantSession(ctx context.Context, sessionID int64, 
 	var session AssistantSession
 	if err := a.DB.WithContext(ctx).Where("id = ? AND user_id = ?", sessionID, principal.UserID).First(&session).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return AssistantSession{}, fmt.Errorf("%w: assistant session", ErrNotFound)
+			return AssistantSession{}, fmt.Errorf("%w：助手会话", ErrNotFound)
 		}
-		return AssistantSession{}, errors.New("load assistant session failed")
+		return AssistantSession{}, errors.New("读取助手会话失败")
 	}
 	return session, nil
 }
@@ -237,18 +237,18 @@ func (a *runtime) requireAssistantSession(ctx context.Context, sessionID int64, 
 func (a *runtime) assistantSessionView(ctx context.Context, session AssistantSession) (AssistantSessionView, error) {
 	var model AIModelConfig
 	if err := a.DB.WithContext(ctx).Select("id, display_name").First(&model, session.ModelConfigID).Error; err != nil {
-		return AssistantSessionView{}, errors.New("load assistant session model failed")
+		return AssistantSessionView{}, errors.New("读取助手会话模型失败")
 	}
 	var count int64
 	if err := a.DB.WithContext(ctx).Model(&AssistantMessage{}).Where("session_id = ?", session.ID).Count(&count).Error; err != nil {
-		return AssistantSessionView{}, errors.New("count assistant messages failed")
+		return AssistantSessionView{}, errors.New("读取助手消息数量失败")
 	}
 	var latest AssistantMessage
 	preview := ""
 	if err := a.DB.WithContext(ctx).Where("session_id = ?", session.ID).Order("id DESC").First(&latest).Error; err == nil {
 		preview = truncateAssistantText(latest.Content, 120)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return AssistantSessionView{}, errors.New("load assistant message preview failed")
+		return AssistantSessionView{}, errors.New("读取助手消息预览失败")
 	}
 	return AssistantSessionView{
 		ID: session.ID, ModelID: model.ID, ModelName: model.DisplayName, Title: session.Title,
@@ -261,7 +261,7 @@ func (a *runtime) loadAssistantHistory(ctx context.Context, sessionID int64) ([]
 	var messages []AssistantMessage
 	if err := a.DB.WithContext(ctx).Where("session_id = ?", sessionID).
 		Order("id DESC").Limit(assistantHistoryLimit).Find(&messages).Error; err != nil {
-		return nil, errors.New("load assistant history failed")
+		return nil, errors.New("读取助手历史失败")
 	}
 	result := make([]assistantChatMessage, 0, len(messages))
 	for index := len(messages) - 1; index >= 0; index-- {

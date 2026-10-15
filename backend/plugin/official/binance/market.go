@@ -225,7 +225,7 @@ func (q *binanceRuntime) broadcastBinanceCandle(subscription *binanceCandleSubsc
 	event.SetTime(candle.CloseTime.UTC())
 	event.SetExtension("partitionkey", "binance:"+candle.Market+":"+candle.Instrument+":"+candle.Interval)
 	if err := event.SetData(cloudevents.ApplicationJSON, binanceCandleData(candle)); err != nil {
-		return errors.New("encode Binance candle event failed")
+		return errors.New("编码币安 K 线事件失败")
 	}
 
 	q.hub.mu.Lock()
@@ -276,7 +276,7 @@ func (q *binanceRuntime) persistBinanceCandles(ctx context.Context, candles []bi
 	}
 	result := q.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&candles, 500)
 	if result.Error != nil {
-		return 0, errors.New("persist Binance candles failed")
+		return 0, errors.New("保存币安 K 线失败")
 	}
 	return result.RowsAffected, nil
 }
@@ -336,12 +336,12 @@ func (q *binanceRuntime) fetchBinanceKlinePage(ctx context.Context, config binan
 func parseBinanceKline(config binanceSeriesConfig, raw json.RawMessage) (binanceCandle, error) {
 	var fields []json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || len(fields) < 7 {
-		return binanceCandle{}, errors.New("binance kline payload is invalid")
+		return binanceCandle{}, errors.New("币安 K 线载荷无效")
 	}
 	var openMillis, closeMillis int64
 	var values [5]string
 	if json.Unmarshal(fields[0], &openMillis) != nil || json.Unmarshal(fields[6], &closeMillis) != nil {
-		return binanceCandle{}, errors.New("binance kline fields are invalid")
+		return binanceCandle{}, errors.New("币安 K 线字段无效")
 	}
 	for index, field := range fields[1:6] {
 		if json.Unmarshal(field, &values[index]) == nil {
@@ -349,7 +349,7 @@ func parseBinanceKline(config binanceSeriesConfig, raw json.RawMessage) (binance
 		}
 		var number json.Number
 		if json.Unmarshal(field, &number) != nil || number == "" {
-			return binanceCandle{}, errors.New("binance kline fields are invalid")
+			return binanceCandle{}, errors.New("币安 K 线字段无效")
 		}
 		values[index] = number.String()
 	}
@@ -357,7 +357,7 @@ func parseBinanceKline(config binanceSeriesConfig, raw json.RawMessage) (binance
 	for index, value := range values {
 		parsed, err := decimal.NewFromString(value)
 		if err != nil {
-			return binanceCandle{}, errors.New("binance kline Decimal is invalid")
+			return binanceCandle{}, errors.New("币安 K 线十进制数值无效")
 		}
 		decimals[index] = parsed
 	}
@@ -366,7 +366,7 @@ func parseBinanceKline(config binanceSeriesConfig, raw json.RawMessage) (binance
 		decimals[2].Sign() <= 0 || decimals[3].Sign() <= 0 || decimals[4].Sign() < 0 ||
 		decimals[1].LessThan(decimal.Max(decimals[0], decimal.Max(decimals[2], decimals[3]))) ||
 		decimals[2].GreaterThan(decimal.Min(decimals[0], decimal.Min(decimals[1], decimals[3]))) {
-		return binanceCandle{}, errors.New("binance kline values are invalid")
+		return binanceCandle{}, errors.New("币安 K 线数值无效")
 	}
 	return binanceCandle{
 		Market: config.Market, Instrument: config.Instrument, Interval: config.Interval,
@@ -483,11 +483,11 @@ func (q *binanceRuntime) streamBinanceCandles(ctx context.Context, subscription 
 			}
 		}
 		if envelope.Code != nil {
-			return errors.New("Binance WebSocket subscription rejected")
+			return errors.New("币安 WebSocket 订阅被拒绝")
 		}
 		if envelope.Stream == "" {
 			if envelope.ID == nil {
-				return errors.New("binance WebSocket payload is invalid")
+				return errors.New("币安 WebSocket 载荷无效")
 			}
 			continue
 		}
@@ -506,14 +506,14 @@ func (q *binanceRuntime) streamBinanceCandles(ctx context.Context, subscription 
 			} `json:"k"`
 		}
 		if json.Unmarshal(envelope.Data, &message) != nil {
-			return errors.New("binance WebSocket payload is invalid")
+			return errors.New("币安 WebSocket 载荷无效")
 		}
 		if message.Symbol != subscription.instrument ||
 			envelope.Stream != strings.ToLower(subscription.instrument)+"@kline_"+message.Kline.Interval {
-			return errors.New("binance WebSocket kline payload is invalid")
+			return errors.New("币安 WebSocket K 线载荷无效")
 		}
 		if _, ok := binanceIntervals[message.Kline.Interval]; !ok {
-			return errors.New("binance WebSocket kline payload is invalid")
+			return errors.New("币安 WebSocket K 线载荷无效")
 		}
 		raw := mustMarshal([]any{
 			message.Kline.OpenTime, message.Kline.Open, message.Kline.High, message.Kline.Low,
@@ -522,7 +522,7 @@ func (q *binanceRuntime) streamBinanceCandles(ctx context.Context, subscription 
 		series := binanceSeriesConfig{Market: subscription.market, Instrument: subscription.instrument, Interval: message.Kline.Interval}
 		candle, err := parseBinanceKline(series, raw)
 		if err != nil {
-			return errors.New("binance WebSocket kline payload is invalid")
+			return errors.New("币安 WebSocket K 线载荷无效")
 		}
 		if message.Kline.Closed {
 			if err := q.broadcastBinanceCandle(subscription, candle); err != nil {
@@ -539,7 +539,7 @@ func writeBinanceCandleSubscription(connection *websocket.Conn, method, instrume
 		streams[index] = strings.ToLower(instrument) + "@kline_" + interval
 	}
 	if err := connection.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		return errors.New("update Binance K line subscription failed")
+		return errors.New("更新币安 K 线订阅失败")
 	}
 	err := connection.WriteJSON(struct {
 		Method string   `json:"method"`
@@ -548,7 +548,7 @@ func writeBinanceCandleSubscription(connection *websocket.Conn, method, instrume
 	}{Method: method, Params: streams, ID: requestID})
 	_ = connection.SetWriteDeadline(time.Time{})
 	if err != nil {
-		return errors.New("update Binance K line subscription failed")
+		return errors.New("更新币安 K 线订阅失败")
 	}
 	return nil
 }
@@ -558,7 +558,7 @@ func (q *binanceRuntime) getBinanceJSON(ctx context.Context, target string, prox
 	defer cancel()
 	request, err := http.NewRequestWithContext(callCtx, http.MethodGet, target, nil)
 	if err != nil {
-		return errors.New("create Binance public request failed")
+		return errors.New("创建币安公开接口请求失败")
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "CoinSphere-Binance/3.0")
@@ -572,14 +572,14 @@ func (q *binanceRuntime) getBinanceJSON(ctx context.Context, target string, prox
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("binance public response status %d", response.StatusCode)
+		return fmt.Errorf("币安公开接口响应状态码为 %d", response.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, maxBinanceResponseBytes+1))
 	if err != nil || len(raw) > maxBinanceResponseBytes {
-		return errors.New("binance public response exceeds the 32 MiB limit")
+		return errors.New("币安公开接口响应超过 32 MiB 限制")
 	}
 	if json.Unmarshal(raw, destination) != nil {
-		return errors.New("decode Binance public response failed")
+		return errors.New("解析币安公开接口响应失败")
 	}
 	return nil
 }
@@ -589,7 +589,7 @@ func (q *binanceRuntime) outboundProxyURL(ctx context.Context, proxyID int64) (*
 		return nil, nil
 	}
 	if q.resolveProxy == nil {
-		return nil, errors.New("outbound proxy resolver is unavailable")
+		return nil, errors.New("出站代理解析器不可用")
 	}
 	raw, err := q.resolveProxy(ctx, proxyID)
 	if err != nil {
@@ -600,7 +600,7 @@ func (q *binanceRuntime) outboundProxyURL(ctx context.Context, proxyID int64) (*
 		proxyURL.Port() == "" || proxyURL.Scheme != "http" && proxyURL.Scheme != "socks5" ||
 		proxyURL.Path != "" || proxyURL.RawPath != "" || proxyURL.RawQuery != "" ||
 		proxyURL.ForceQuery || proxyURL.Fragment != "" {
-		return nil, errors.New("outbound proxy configuration is invalid")
+		return nil, errors.New("出站代理配置无效")
 	}
 	return proxyURL, nil
 }

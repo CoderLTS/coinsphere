@@ -1,4 +1,4 @@
-// Package business is a small, non-financial SDK 5 extension.
+// Package business is a small, non-financial SDK 1 extension.
 package business
 
 import (
@@ -33,9 +33,9 @@ func resources(raw json.RawMessage) ([]sdk.WorkflowResource, error) {
 func Register(r sdk.Registrar, host sdk.Host) error {
 	if err := r.Action(sdk.NodeDescriptor{
 		Type: "example.business.task", Version: "1.0.0", Kind: sdk.NodeKindAction,
-		Title: "业务事项", Description: "生成一个可在插件菜单确认的业务事项", Category: "business",
+		Title: "业务事项", Description: "生成一个可在插件菜单确认的业务事项", Category: "business", CategoryTitle: "业务",
 		ConfigSchema: empty, InputSchema: empty, UISchema: json.RawMessage(`{}`),
-		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"message":{"type":"string"}},"required":["message"],"additionalProperties":false}`),
+		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"message":{"title":"消息","type":"string"}},"required":["message"],"additionalProperties":false}`),
 		Pool:         sdk.PoolCompute, State: sdk.StateStateless, SideEffect: sdk.SideEffectNone,
 	}, task{}); err != nil {
 		return err
@@ -45,7 +45,7 @@ func Register(r sdk.Registrar, host sdk.Host) error {
 	}
 	if err := r.ResultPage(sdk.ResultPageDescriptor{
 		PageKey: "tasks", Title: "业务事项", ComponentEntry: "TaskResults.vue",
-		ScopeSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"workflowId":{"type":"integer","minimum":1}},"additionalProperties":false}`),
+		ScopeSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"workflowId":{"title":"工作流编号","type":"integer","minimum":1}},"additionalProperties":false}`),
 		FilterSchema: empty, Actions: []string{"ack"}, Resources: resources,
 		ValidateScope: func(ctx context.Context, tx *gorm.DB, raw json.RawMessage) error {
 			refs, err := resources(raw)

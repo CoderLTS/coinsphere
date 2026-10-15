@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { addNode, canvasCells, cloneGraph, removeNode } from './graph'
+import { addNode, canvasCells, cloneGraph, removeNode, schemaFieldPaths } from './graph'
+import { readRouteFilters } from '../../hooks/core/useRouteFilters'
+import { schemaOutputFields } from './output-summary'
 import type { WorkflowGraph, WorkflowNodeDefinition } from '../../api/workflows'
 
 const fixture: WorkflowGraph = {
@@ -134,4 +136,67 @@ test('compact rectangular canvas shows short branches and preserves stored posit
   )
   assert.ok('labels' in edge && edge.labels[0] === '数据不可用')
   assert.deepEqual(graph, before)
+})
+
+test('Chinese schema labels preserve original binding paths', () => {
+  assert.deepEqual(
+    schemaFieldPaths({
+      properties: {
+        metrics: {
+          title: '指标',
+          properties: { maxDrawdown: { title: '最大回撤', type: 'string' } }
+        },
+        model: { title: '模型名称', type: 'string' }
+      }
+    }),
+    [
+      { value: 'metrics', label: '指标' },
+      { value: 'metrics.maxDrawdown', label: '指标 / 最大回撤' },
+      { value: 'model', label: '模型名称' }
+    ]
+  )
+})
+
+test('output labels use schema metadata and keep raw values untouched', () => {
+  const output = {
+    side: 'buy',
+    ready: false,
+    model: 'GPT-6',
+    details: { value: '0.123456789' },
+    raw: 'HTTP 429'
+  }
+  assert.deepEqual(
+    schemaOutputFields(
+      {
+        properties: {
+          side: { title: '方向', enum: ['buy', 'sell'], enumLabels: ['买入', '卖出'] },
+          ready: { title: '是否就绪' },
+          model: { title: '模型名称' },
+          details: { title: '详情' }
+        }
+      },
+      output
+    ),
+    [
+      { key: 'side', title: '方向', value: '买入' },
+      { key: 'ready', title: '是否就绪', value: '否' },
+      { key: 'model', title: '模型名称', value: 'GPT-6' },
+      { key: 'details', title: '详情', value: '{"value":"0.123456789"}' }
+    ]
+  )
+  assert.equal(output.side, 'buy')
+  assert.equal(output.raw, 'HTTP 429')
+  assert.deepEqual(schemaOutputFields({}, output), [])
+})
+
+test('URL filters preserve explicit all-status and reject ambiguous identifiers', () => {
+  const defaults = { status: 'pending', workflowId: 0 }
+  assert.deepEqual(readRouteFilters(defaults, { status: '', workflowId: '7' }), {
+    status: '',
+    workflowId: 7
+  })
+  assert.deepEqual(readRouteFilters(defaults, {}), defaults)
+  for (const workflowId of [['7', '8'], '-1', '1.2', '1e2', '9007199254740992'])
+    assert.throws(() => readRouteFilters(defaults, { workflowId }))
+  assert.throws(() => readRouteFilters(defaults, { status: 'x'.repeat(4097) }))
 })

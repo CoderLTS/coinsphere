@@ -31,6 +31,14 @@ func TestSeedPreservesPersonalAccountAndUserNavigation(t *testing.T) {
 	if menu.Path != page.RoutePath() || menu.Component != page.RouteComponent() {
 		t.Fatal("page reference routing lost")
 	}
+	var pluginRoot db.SystemMenu
+	if err := database.Where("name=?", "Plugins").First(&pluginRoot).Error; err != nil || menu.ParentID == nil || *menu.ParentID != pluginRoot.ID {
+		t.Fatal("plugin page is not nested under the plugin root", err)
+	}
+	var roots []db.SystemMenu
+	if err := database.Where("parent_id IS NULL").Order("sort").Find(&roots).Error; err != nil || len(roots) != 4 {
+		t.Fatal("default navigation must have four roots", err)
+	}
 	if err := database.Model(&menu).Updates(map[string]any{"parent_id": nil, "title": "个人结果", "icon": "ri:home-line", "sort": 1, "is_hidden": true}).Error; err != nil {
 		t.Fatal(err)
 	}

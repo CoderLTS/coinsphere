@@ -1,4 +1,72 @@
 // 全局样式
+.workspace-heading {
+  margin-bottom: 12px;
+
+  h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  p {
+    margin: 6px 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+}
+
+.art-full-height,
+.workflow-page,
+.run-page,
+.user-center-page,
+.ops-console {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+
+  .el-table {
+    --el-table-row-hover-bg-color: var(--el-fill-color-light);
+    font-size: 13px;
+  }
+  .el-table .el-table__cell {
+    padding: 6px 0;
+  }
+  .el-card__header {
+    padding: 14px 16px;
+  }
+  .el-card__body {
+    padding: 16px;
+  }
+}
+
+.workspace-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--default-box-color);
+  border: 1px solid var(--default-border);
+  border-radius: 8px;
+
+  .el-form-item {
+    margin: 0;
+  }
+  .el-select {
+    width: 150px;
+  }
+  .el-date-editor {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .workspace-filters .el-form-item {
+    width: 100%;
+  }
+  .workspace-filters .el-form-item__content {
+    min-width: 0;
+  }
+}
+
 // 顶部进度条颜色
 #nprogress .bar {
   z-index: 2400;

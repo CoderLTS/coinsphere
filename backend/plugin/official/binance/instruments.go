@@ -22,7 +22,7 @@ func registerInstrumentSync(registrar sdk.Registrar, runtime *binanceRuntime) er
 		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"markets":{"type":"array","title":"市场类型","items":{"type":"string","enum":["spot","usdm"]},"minItems":1,"maxItems":2,"uniqueItems":true,"default":["spot","usdm"]},"proxyId":{"type":"integer","title":"代理","minimum":0,"default":0,"x-coinsphere-proxy":true},"quoteAssets":{"type":"array","title":"报价资产","items":{"type":"string"},"minItems":1,"maxItems":100,"default":["USDT","USDC"]},"baseAssetAllowlist":{"type":"array","title":"基础资产白名单","items":{"type":"string"},"maxItems":1000,"default":[]},"baseAssetDenylist":{"type":"array","title":"基础资产黑名单","items":{"type":"string"},"maxItems":1000,"default":[]},"symbolAllowlist":{"type":"array","title":"交易对白名单","items":{"type":"string"},"maxItems":1000,"default":[]},"symbolDenylist":{"type":"array","title":"交易对黑名单","items":{"type":"string"},"maxItems":1000,"default":[]}},"required":["markets","quoteAssets","baseAssetAllowlist","baseAssetDenylist","symbolAllowlist","symbolDenylist"],"additionalProperties":false}`),
 		UISchema:     json.RawMessage(`{"ui:order":["markets","proxyId","quoteAssets","baseAssetAllowlist","baseAssetDenylist","symbolAllowlist","symbolDenylist"]}`),
 		InputSchema:  emptyObjectSchema,
-		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"fetchedCount":{"type":"integer"},"matchedCount":{"type":"integer"},"upsertedCount":{"type":"integer"},"deletedCount":{"type":"integer"},"syncedAt":{"type":"string","format":"date-time"}},"required":["fetchedCount","matchedCount","upsertedCount","deletedCount","syncedAt"],"additionalProperties":false}`),
+		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"fetchedCount":{"type":"integer","title":"获取条数"},"matchedCount":{"type":"integer","title":"匹配条数"},"upsertedCount":{"type":"integer","title":"写入条数"},"deletedCount":{"type":"integer","title":"删除条数"},"syncedAt":{"type":"string","format":"date-time","title":"同步时间","description":"使用 UTC 时间，接口采用 ISO 8601 格式。"}},"required":["fetchedCount","matchedCount","upsertedCount","deletedCount","syncedAt"],"additionalProperties":false}`),
 		Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectData, RetrySafe: true, State: sdk.StateStateless,
 	}, "Binance 币种元数据采集", "同步 Binance 现货与 USD-M 交易规则。", "market", "#0f766e", "list-filter"), binanceInstrumentSyncAction{runtime: runtime})
 }
@@ -36,7 +36,7 @@ func (a binanceInstrumentSyncAction) Execute(ctx context.Context, request sdk.Ac
 	}
 	workflowID, err := strconv.ParseInt(request.Revision.WorkflowID, 10, 64)
 	if err != nil || workflowID <= 0 {
-		return sdk.ActionResult{}, errors.New("Binance workflow identity is invalid")
+		return sdk.ActionResult{}, errors.New("币安工作流标识无效")
 	}
 	now := time.Now().UTC()
 	fetchedCount := 0
@@ -57,7 +57,7 @@ func (a binanceInstrumentSyncAction) Execute(ctx context.Context, request sdk.Ac
 	deletedCount := int64(0)
 	err = a.runtime.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", binanceInstrumentSyncLock).Error; err != nil {
-			return errors.New("lock Binance instrument sync failed")
+			return errors.New("锁定币安品种同步失败")
 		}
 		if len(instruments) > 0 {
 			if err := tx.Clauses(clause.OnConflict{
@@ -66,11 +66,11 @@ func (a binanceInstrumentSyncAction) Execute(ctx context.Context, request sdk.Ac
 					"base_asset", "quote_asset", "status", "price_tick", "quantity_step", "min_quantity", "updated_at",
 				}),
 			}).CreateInBatches(&instruments, 500).Error; err != nil {
-				return errors.New("persist Binance instrument metadata failed")
+				return errors.New("保存币安品种元数据失败")
 			}
 		}
 		if err := tx.Where("workflow_id = ?", workflowID).Delete(&binanceInstrumentSource{}).Error; err != nil {
-			return errors.New("replace Binance instrument source snapshot failed")
+			return errors.New("替换币安品种来源快照失败")
 		}
 		sources := make([]binanceInstrumentSource, len(instruments))
 		for index, instrument := range instruments {
@@ -80,7 +80,7 @@ func (a binanceInstrumentSyncAction) Execute(ctx context.Context, request sdk.Ac
 		}
 		if len(sources) > 0 {
 			if err := tx.CreateInBatches(&sources, 500).Error; err != nil {
-				return errors.New("persist Binance instrument source snapshot failed")
+				return errors.New("保存币安品种来源快照失败")
 			}
 		}
 		result := tx.Exec(`DELETE FROM plugin_binance.instruments AS instrument
@@ -89,7 +89,7 @@ WHERE NOT EXISTS (
     WHERE source.market = instrument.market AND source.symbol = instrument.symbol
 )`)
 		if result.Error != nil {
-			return errors.New("delete unreferenced Binance instruments failed")
+			return errors.New("删除未引用的币安品种失败")
 		}
 		deletedCount = result.RowsAffected
 		return nil
@@ -123,7 +123,7 @@ func (q *binanceRuntime) fetchBinanceInstruments(ctx context.Context, market str
 		return nil, err
 	}
 	if len(payload.Symbols) == 0 {
-		return nil, errors.New("binance instrument metadata is empty")
+		return nil, errors.New("币安品种元数据为空")
 	}
 	result := make([]binanceInstrument, 0, len(payload.Symbols))
 	for _, item := range payload.Symbols {
@@ -149,7 +149,7 @@ func (q *binanceRuntime) fetchBinanceInstruments(ctx context.Context, market str
 			!binanceInstrumentPattern.MatchString(instrument.BaseAsset) || !binanceInstrumentPattern.MatchString(instrument.QuoteAsset) ||
 			instrument.Status == "" || instrument.PriceTick.Sign() <= 0 ||
 			instrument.QuantityStep.Sign() <= 0 || instrument.MinQuantity.Sign() < 0 {
-			return nil, errors.New("binance instrument metadata contains an invalid symbol")
+			return nil, errors.New("币安品种元数据包含无效交易对")
 		}
 		result = append(result, instrument)
 	}

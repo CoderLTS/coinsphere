@@ -64,14 +64,14 @@ func parseQuantCodeStrategyConfig(raw json.RawMessage) (quantCodeStrategyConfig,
 	var config quantCodeStrategyConfig
 	if !decodeQuantStrict(raw, &config) || len(config.Series) < 1 || len(config.Series) > 8 ||
 		len(strings.TrimSpace(config.Source)) < 1 || len(config.Source) > maxQuantCodeBytes {
-		return config, errors.New("code strategy configuration is invalid")
+		return config, errors.New("代码策略配置无效")
 	}
 	aliases, outputs := map[string]bool{}, map[string]bool{}
 	for index := range config.Series {
 		series := &config.Series[index]
 		series.Alias = strings.TrimSpace(series.Alias)
 		if !quantCodeNamePattern.MatchString(series.Alias) || aliases[series.Alias] || series.Lookback < 1 || series.Lookback > 500 {
-			return config, errors.New("code strategy series declaration is invalid")
+			return config, errors.New("代码策略行情序列声明无效")
 		}
 		if _, err := parseQuantSeriesConfig(mustMarshal(quantSeriesConfig{Venue: series.Venue, Market: series.Market, Instrument: series.Instrument, Interval: series.Interval})); err != nil {
 			return config, err
@@ -80,15 +80,15 @@ func parseQuantCodeStrategyConfig(raw json.RawMessage) (quantCodeStrategyConfig,
 	}
 	for _, name := range append(append([]string{}, config.BooleanOutputs...), config.DecimalOutputs...) {
 		if !quantCodeNamePattern.MatchString(name) || outputs[name] {
-			return config, errors.New("code strategy output declaration is invalid")
+			return config, errors.New("代码策略输出声明无效")
 		}
 		outputs[name] = true
 	}
 	if len(config.BooleanOutputs) == 0 || len(config.BooleanOutputs)+len(config.DecimalOutputs) > 64 || !containsQuantString(config.BooleanOutputs, config.BranchField) {
-		return config, errors.New("code strategy branchField must reference a Boolean output")
+		return config, errors.New("代码策略分支字段须引用布尔输出")
 	}
 	if quantContainsJSONNumber(config.Parameters) {
-		return config, errors.New("code strategy parameters must use Decimal strings instead of JSON numbers")
+		return config, errors.New("代码策略参数须使用十进制字符串，不能使用 JSON 数值")
 	}
 	return config, nil
 }
@@ -103,7 +103,7 @@ func (a *quantCodeStrategyAction) Execute(ctx context.Context, request sdk.Actio
 		PathEntered bool   `json:"pathEntered"`
 	}
 	if !decodeQuantStrict(request.Input, &input) {
-		return sdk.ActionResult{}, errors.New("code strategy input is invalid")
+		return sdk.ActionResult{}, errors.New("代码策略输入无效")
 	}
 	evaluatedAt, err := parseQuantUTCTime(input.EventTime)
 	if err != nil {
@@ -139,7 +139,7 @@ func (a *quantCodeStrategyAction) Execute(ctx context.Context, request sdk.Actio
 		}
 		value, _, err := program.Eval(map[string]any{"ohlcv": ohlcv, "params": config.Parameters})
 		if err != nil {
-			return sdk.ActionResult{}, fmt.Errorf("evaluate code strategy CEL failed: %w", err)
+			return sdk.ActionResult{}, fmt.Errorf("计算代码策略 CEL 失败：%w", err)
 		}
 		booleans, decimals, err = quantCodeStrategyValues(config, value)
 		if err != nil {
@@ -166,7 +166,7 @@ func (a *quantCodeStrategyAction) program(source string) (cel.Program, error) {
 	}
 	program, err := env.Program(ast)
 	if err != nil {
-		return nil, errors.New("create code strategy CEL program failed")
+		return nil, errors.New("创建代码策略 CEL 程序失败")
 	}
 	actual, _ := a.programs.LoadOrStore(source, program)
 	return actual.(cel.Program), nil
@@ -175,18 +175,18 @@ func (a *quantCodeStrategyAction) program(source string) (cel.Program, error) {
 func validateQuantCodeStrategyOutputs(config quantCodeStrategyConfig, ast *cel.Ast) error {
 	checked, err := cel.AstToCheckedExpr(ast)
 	if err != nil {
-		return errors.New("inspect code strategy CEL output failed")
+		return errors.New("检查代码策略 CEL 输出失败")
 	}
 	aliases := make(map[string]bool, len(config.Series))
 	for _, series := range config.Series {
 		aliases[series.Alias] = true
 	}
 	if !quantCELReferencesValid(checked.Expr, aliases, config.Parameters) {
-		return errors.New("code strategy CEL references an undeclared series, field, or parameter")
+		return errors.New("代码策略 CEL 引用了未声明的序列、字段或参数")
 	}
 	object := checked.Expr.GetStructExpr()
 	if object == nil || object.GetMessageName() != "" {
-		return errors.New("code strategy CEL must return an object literal")
+		return errors.New("代码策略 CEL 须返回对象字面量")
 	}
 	type output struct {
 		valueType *exprpb.Type
@@ -196,11 +196,11 @@ func validateQuantCodeStrategyOutputs(config quantCodeStrategyConfig, ast *cel.A
 	for _, entry := range object.Entries {
 		key := entry.GetMapKey().GetConstExpr()
 		if key == nil {
-			return errors.New("code strategy CEL output names must be string literals")
+			return errors.New("代码策略 CEL 输出名称须为字符串字面量")
 		}
 		name := key.GetStringValue()
 		if name == "" {
-			return errors.New("code strategy CEL output names must be string literals")
+			return errors.New("代码策略 CEL 输出名称须为字符串字面量")
 		}
 		outputs[name] = output{valueType: checked.TypeMap[entry.Value.Id], expr: entry.Value}
 	}
@@ -208,14 +208,14 @@ func validateQuantCodeStrategyOutputs(config quantCodeStrategyConfig, ast *cel.A
 		item := outputs[name]
 		if item.valueType == nil || item.valueType.GetDyn() == nil && item.valueType.GetPrimitive() != exprpb.Type_BOOL ||
 			item.valueType.GetDyn() != nil && !quantCELDynamicOutputCompatible(item.expr, config.Parameters, false) {
-			return fmt.Errorf("code strategy Boolean output %q is missing or has an incompatible type", name)
+			return fmt.Errorf("代码策略布尔输出 %q 缺失或类型不兼容", name)
 		}
 	}
 	for _, name := range config.DecimalOutputs {
 		item := outputs[name]
 		if item.valueType == nil || item.valueType.GetDyn() == nil && item.valueType.GetPrimitive() != exprpb.Type_STRING ||
 			item.valueType.GetDyn() != nil && !quantCELDynamicOutputCompatible(item.expr, config.Parameters, true) {
-			return fmt.Errorf("code strategy Decimal output %q is missing or has an incompatible type", name)
+			return fmt.Errorf("代码策略十进制输出 %q 缺失或类型不兼容", name)
 		}
 	}
 	return nil
@@ -242,7 +242,7 @@ func quantCELDynamicOutputCompatible(expr *exprpb.Expr, parameters map[string]an
 func quantCodeStrategyValues(config quantCodeStrategyConfig, value ref.Val) (map[string]bool, map[string]string, error) {
 	native, err := value.ConvertToNative(reflect.TypeOf(map[string]any{}))
 	if err != nil {
-		return nil, nil, errors.New("code strategy CEL must return an object")
+		return nil, nil, errors.New("代码策略 CEL 须返回对象")
 	}
 	result, _ := native.(map[string]any)
 	booleans := make(map[string]bool, len(config.BooleanOutputs))
@@ -250,7 +250,7 @@ func quantCodeStrategyValues(config quantCodeStrategyConfig, value ref.Val) (map
 	for _, name := range config.BooleanOutputs {
 		item, ok := result[name].(bool)
 		if !ok {
-			return nil, nil, fmt.Errorf("code strategy Boolean output %q is missing or invalid", name)
+			return nil, nil, fmt.Errorf("代码策略布尔输出 %q 缺失或无效", name)
 		}
 		booleans[name] = item
 	}
@@ -258,7 +258,7 @@ func quantCodeStrategyValues(config quantCodeStrategyConfig, value ref.Val) (map
 		item, ok := result[name].(string)
 		decimalValue, decimalErr := decimal.NewFromString(item)
 		if !ok || decimalErr != nil {
-			return nil, nil, fmt.Errorf("code strategy Decimal output %q is missing or invalid", name)
+			return nil, nil, fmt.Errorf("代码策略十进制输出 %q 缺失或无效", name)
 		}
 		decimals[name] = decimalValue.String()
 	}
@@ -297,7 +297,7 @@ func compileQuantCodeStrategy(source string) (*cel.Env, *cel.Ast, error) {
 	}
 	checked, err := cel.AstToCheckedExpr(ast)
 	if err != nil || quantCELUnsafe(checked.Expr) {
-		return nil, nil, errors.New("code strategy CEL must not use floating point or native arithmetic")
+		return nil, nil, errors.New("代码策略 CEL 不能使用浮点或原生算术运算")
 	}
 	return env, ast, nil
 }

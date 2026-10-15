@@ -15,7 +15,7 @@
 -->
 <template>
   <template v-for="field in visibleFields" :key="field.key">
-    <ElFormItem :label="field.title">
+    <ElFormItem :label="field.title" :data-field-key="field.key">
       <!-- 对象数组：一行一条，行内再按子 schema 渲染。 -->
       <template v-if="field.control === 'objectList'">
         <div class="schema-fields__list">

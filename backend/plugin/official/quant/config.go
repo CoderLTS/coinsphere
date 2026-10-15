@@ -42,17 +42,17 @@ func parseQuantSeriesConfig(raw json.RawMessage) (quantSeriesConfig, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&config) != nil {
-		return config, errors.New("quant series configuration is invalid")
+		return config, errors.New("量化行情序列配置无效")
 	}
 	config.Market = strings.ToLower(strings.TrimSpace(config.Market))
 	config.Venue = strings.ToLower(strings.TrimSpace(config.Venue))
 	config.Instrument = strings.ToUpper(strings.TrimSpace(config.Instrument))
 	config.Interval = strings.TrimSpace(config.Interval)
 	if !quantProviderPattern.MatchString(config.Venue) || config.Market == "" || !quantSeriesInstrumentPattern.MatchString(config.Instrument) {
-		return config, errors.New("quant market or instrument is invalid")
+		return config, errors.New("量化市场或交易品种无效")
 	}
 	if _, ok := quantIntervals[config.Interval]; !ok {
-		return config, errors.New("quant interval is unsupported")
+		return config, errors.New("不支持此量化周期")
 	}
 	return config, nil
 }
@@ -65,13 +65,13 @@ func parseQuantStrategyConfig(raw json.RawMessage) (quantStrategyConfig, error) 
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&payload) != nil || len(payload.Parameters) == 0 {
-		return quantStrategyConfig{}, errors.New("quant strategy configuration is invalid")
+		return quantStrategyConfig{}, errors.New("量化策略配置无效")
 	}
 	series, err := parseQuantSeriesConfig(mustMarshal(map[string]any{
 		"venue": payload.Venue, "market": payload.Market, "instrument": payload.Instrument, "interval": payload.Interval,
 	}))
 	if err != nil || strings.TrimSpace(payload.StrategyID) == "" {
-		return quantStrategyConfig{}, errors.New("quant strategy configuration is invalid")
+		return quantStrategyConfig{}, errors.New("量化策略配置无效")
 	}
 	return quantStrategyConfig{quantSeriesConfig: series, StrategyID: strings.TrimSpace(payload.StrategyID), Parameters: payload.Parameters}, nil
 }
@@ -86,7 +86,7 @@ func parseQuantBacktestConfig(raw json.RawMessage) (quantBacktestConfig, error) 
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&payload) != nil {
-		return quantBacktestConfig{}, errors.New("quant backtest configuration is invalid")
+		return quantBacktestConfig{}, errors.New("量化回测配置无效")
 	}
 	strategy, err := parseQuantStrategyConfig(mustMarshal(map[string]any{
 		"venue": payload.Venue, "market": payload.Market, "instrument": payload.Instrument, "interval": payload.Interval,
@@ -105,7 +105,7 @@ func parseQuantBacktestConfig(raw json.RawMessage) (quantBacktestConfig, error) 
 	if startErr != nil || endErr != nil || startOffset != 0 || endOffset != 0 || !end.After(start) ||
 		initialErr != nil || feeErr != nil || slippageErr != nil || initial.Sign() <= 0 ||
 		fee.Sign() < 0 || fee.GreaterThan(quantOne) || slippage.Sign() < 0 || slippage.GreaterThan(quantOne) {
-		return quantBacktestConfig{}, errors.New("quant backtest range or Decimal settings are invalid")
+		return quantBacktestConfig{}, errors.New("量化回测范围或十进制参数无效")
 	}
 	return quantBacktestConfig{
 		quantStrategyConfig: strategy, StartTime: start.UTC(), EndTime: end.UTC(),
@@ -116,7 +116,7 @@ func parseQuantBacktestConfig(raw json.RawMessage) (quantBacktestConfig, error) 
 func quantInt64(value string) (int64, error) {
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed <= 0 {
-		return 0, errors.New("positive integer is required")
+		return 0, errors.New("须填写正整数")
 	}
 	return parsed, nil
 }

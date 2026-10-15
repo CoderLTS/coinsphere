@@ -46,7 +46,7 @@ func (a *App) ListWorkflowGroups(ctx context.Context) ([]WorkflowGroupView, erro
 	}
 	var groups []db.WorkflowGroup
 	if err := a.DB.WithContext(ctx).Order("sort_order, id").Find(&groups).Error; err != nil {
-		return nil, errors.New("list workflow groups failed")
+		return nil, errors.New("读取工作流分组失败")
 	}
 	result := make([]WorkflowGroupView, len(groups))
 	for index := range groups {
@@ -66,7 +66,7 @@ func (a *App) CreateWorkflowGroup(ctx context.Context, payload WorkflowGroupUpse
 			return err
 		}
 		if err := tx.Exec("LOCK TABLE workflow_groups IN SHARE ROW EXCLUSIVE MODE").Error; err != nil {
-			return errors.New("lock workflow groups failed")
+			return errors.New("锁定工作流分组失败")
 		}
 		name, err := validateWorkflowGroupName(tx, payload.Name, 0)
 		if err != nil {
@@ -74,10 +74,10 @@ func (a *App) CreateWorkflowGroup(ctx context.Context, payload WorkflowGroupUpse
 		}
 		group.Name = name
 		if err := tx.Model(&db.WorkflowGroup{}).Select("COALESCE(MAX(sort_order), -1) + 1").Scan(&group.SortOrder).Error; err != nil {
-			return errors.New("load workflow group order failed")
+			return errors.New("读取工作流分组顺序失败")
 		}
 		if err := tx.Create(&group).Error; err != nil {
-			return errors.New("create workflow group failed")
+			return errors.New("创建工作流分组失败")
 		}
 		return nil
 	})
@@ -97,7 +97,7 @@ func (a *App) UpdateWorkflowGroup(ctx context.Context, groupID int64, payload Wo
 			return err
 		}
 		if err := tx.Exec("LOCK TABLE workflow_groups IN SHARE ROW EXCLUSIVE MODE").Error; err != nil {
-			return errors.New("lock workflow groups failed")
+			return errors.New("锁定工作流分组失败")
 		}
 		if err := tx.First(&group, groupID).Error; err != nil {
 			return workflowGroupLookupError(err)
@@ -111,7 +111,7 @@ func (a *App) UpdateWorkflowGroup(ctx context.Context, groupID int64, payload Wo
 		if err := tx.Model(&group).Updates(map[string]any{
 			"name": group.Name, "updated_at": group.UpdatedAt,
 		}).Error; err != nil {
-			return errors.New("update workflow group failed")
+			return errors.New("更新工作流分组失败")
 		}
 		return nil
 	})
@@ -146,7 +146,7 @@ func (a *App) UpdateWorkflowGroupOrder(ctx context.Context, payload WorkflowGrou
 	}
 	groupIDs := uniquePositiveInt64s(payload.GroupIDs)
 	if len(groupIDs) != len(payload.GroupIDs) {
-		return nil, errors.New("groupIds must contain unique positive ids")
+		return nil, errors.New("分组编号须为不重复的正整数")
 	}
 	now := time.Now().UTC()
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -154,14 +154,14 @@ func (a *App) UpdateWorkflowGroupOrder(ctx context.Context, payload WorkflowGrou
 			return err
 		}
 		if err := tx.Exec("LOCK TABLE workflow_groups IN SHARE ROW EXCLUSIVE MODE").Error; err != nil {
-			return errors.New("lock workflow groups failed")
+			return errors.New("锁定工作流分组失败")
 		}
 		var currentIDs []int64
 		if err := tx.Model(&db.WorkflowGroup{}).Order("id").Pluck("id", &currentIDs).Error; err != nil {
-			return errors.New("load workflow groups failed")
+			return errors.New("读取工作流分组失败")
 		}
 		if len(currentIDs) != len(groupIDs) {
-			return fmt.Errorf("%w: workflow groups changed", ErrConflict)
+			return fmt.Errorf("%w：工作流分组已变更，请刷新后重试", ErrConflict)
 		}
 		requested := make(map[int64]bool, len(groupIDs))
 		for _, groupID := range groupIDs {
@@ -169,14 +169,14 @@ func (a *App) UpdateWorkflowGroupOrder(ctx context.Context, payload WorkflowGrou
 		}
 		for _, groupID := range currentIDs {
 			if !requested[groupID] {
-				return fmt.Errorf("%w: workflow groups changed", ErrConflict)
+				return fmt.Errorf("%w：工作流分组已变更，请刷新后重试", ErrConflict)
 			}
 		}
 		for index, groupID := range payload.GroupIDs {
 			if err := tx.Model(&db.WorkflowGroup{}).Where("id = ?", groupID).Updates(map[string]any{
 				"sort_order": index, "updated_at": now,
 			}).Error; err != nil {
-				return errors.New("update workflow group order failed")
+				return errors.New("更新工作流分组顺序失败")
 			}
 		}
 		return nil
@@ -195,10 +195,10 @@ func (a *App) AssignWorkflowGroup(ctx context.Context, payload WorkflowGroupAssi
 	}
 	workflowIDs := uniquePositiveInt64s(payload.WorkflowIDs)
 	if len(workflowIDs) == 0 || len(workflowIDs) != len(payload.WorkflowIDs) {
-		return WorkflowGroupAssignmentResult{}, errors.New("workflowIds must contain unique positive ids")
+		return WorkflowGroupAssignmentResult{}, errors.New("工作流编号须为不重复的正整数")
 	}
 	if len(workflowIDs) > maxWorkflowGroupAssignments {
-		return WorkflowGroupAssignmentResult{}, fmt.Errorf("workflowIds must not contain more than %d ids", maxWorkflowGroupAssignments)
+		return WorkflowGroupAssignmentResult{}, fmt.Errorf("一次最多调整 %d 个工作流的分组", maxWorkflowGroupAssignments)
 	}
 	result := WorkflowGroupAssignmentResult{}
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -216,10 +216,10 @@ func (a *App) AssignWorkflowGroup(ctx context.Context, payload WorkflowGroupAssi
 		}
 		var count int64
 		if err := tx.Model(&db.Workflow{}).Where("id IN ?", workflowIDs).Count(&count).Error; err != nil {
-			return errors.New("load workflows for group assignment failed")
+			return errors.New("读取待调整分组的工作流失败")
 		}
 		if count != int64(len(workflowIDs)) {
-			return fmt.Errorf("%w: workflow", ErrNotFound)
+			return fmt.Errorf("%w：工作流", ErrNotFound)
 		}
 		var groupID any
 		if payload.GroupID != nil {
@@ -229,7 +229,7 @@ func (a *App) AssignWorkflowGroup(ctx context.Context, payload WorkflowGroupAssi
 			"group_id": groupID, "updated_at": time.Now().UTC(),
 		})
 		if update.Error != nil {
-			return errors.New("assign workflow group failed")
+			return errors.New("调整工作流分组失败")
 		}
 		result.Updated = update.RowsAffected
 		return nil
@@ -240,7 +240,7 @@ func (a *App) AssignWorkflowGroup(ctx context.Context, payload WorkflowGroupAssi
 func validateWorkflowGroupName(database *gorm.DB, value string, currentID int64) (string, error) {
 	name := strings.TrimSpace(value)
 	if name == "" || utf8.RuneCountInString(name) > 80 {
-		return "", errors.New("workflow group name must contain 1 to 80 characters")
+		return "", errors.New("工作流分组名称须为 1 至 80 个字符")
 	}
 	query := database.Model(&db.WorkflowGroup{}).Where("LOWER(name) = LOWER(?)", name)
 	if currentID > 0 {
@@ -248,10 +248,10 @@ func validateWorkflowGroupName(database *gorm.DB, value string, currentID int64)
 	}
 	var duplicate int64
 	if err := query.Count(&duplicate).Error; err != nil {
-		return "", errors.New("check workflow group name failed")
+		return "", errors.New("检查工作流分组名称失败")
 	}
 	if duplicate > 0 {
-		return "", fmt.Errorf("%w: workflow group name already exists", ErrConflict)
+		return "", fmt.Errorf("%w：工作流分组名称已存在", ErrConflict)
 	}
 	return name, nil
 }
@@ -261,7 +261,7 @@ func validateWorkflowGroupID(database *gorm.DB, groupID *int64) error {
 		return nil
 	}
 	if *groupID <= 0 {
-		return errors.New("groupId must be positive or null")
+		return errors.New("分组编号须为正整数或空值")
 	}
 	var group db.WorkflowGroup
 	if err := database.Clauses(clause.Locking{Strength: "KEY SHARE"}).Select("id").First(&group, *groupID).Error; err != nil {
@@ -272,9 +272,9 @@ func validateWorkflowGroupID(database *gorm.DB, groupID *int64) error {
 
 func workflowGroupLookupError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("%w: workflow group", ErrNotFound)
+		return fmt.Errorf("%w：工作流分组", ErrNotFound)
 	}
-	return errors.New("load workflow group failed")
+	return errors.New("读取工作流分组失败")
 }
 
 func workflowGroupView(group db.WorkflowGroup) WorkflowGroupView {

@@ -176,3 +176,19 @@ export function ancestors(graph: WorkflowGraph, id: string): Set<string> {
   }
   return found
 }
+
+export function schemaFieldPaths(
+  schema: Record<string, any>,
+  path: string[] = [],
+  titles: string[] = []
+): { value: string; label: string }[] {
+  if (path.length >= 12) return []
+  return Object.entries(schema.properties || {}).flatMap(([name, property]: [string, any]) => {
+    const next = [...path, name],
+      labels = [...titles, String(property.title || name)]
+    return [
+      { value: next.join('.'), label: labels.join(' / ') },
+      ...schemaFieldPaths(property, next, labels)
+    ]
+  })
+}

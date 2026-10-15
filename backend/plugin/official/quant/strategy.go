@@ -15,7 +15,7 @@ import (
 
 const smaStrategyID = "official.quant.sma-crossover"
 
-var smaParameterSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"fastPeriod":{"type":"integer","minimum":1,"maximum":100},"slowPeriod":{"type":"integer","minimum":2,"maximum":200}},"required":["fastPeriod","slowPeriod"],"additionalProperties":false}`)
+var smaParameterSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"fastPeriod":{"type":"integer","minimum":1,"maximum":100,"title":"快线周期"},"slowPeriod":{"type":"integer","minimum":2,"maximum":200,"title":"慢线周期"}},"required":["fastPeriod","slowPeriod"],"additionalProperties":false}`)
 var quantOne = decimal.NewFromInt(1)
 
 var quantIntervals = map[string]time.Duration{
@@ -54,7 +54,7 @@ func (smaCrossoverStrategy) Evaluate(ctx context.Context, request trading.Evalua
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&parameters) != nil || parameters.FastPeriod < 1 || parameters.SlowPeriod <= parameters.FastPeriod ||
 		parameters.FastPeriod > 100 || parameters.SlowPeriod > 200 || len(request.Candles) < parameters.SlowPeriod {
-		return decimal.Zero, errors.New("sma crossover parameters or lookback are invalid")
+		return decimal.Zero, errors.New("均线交叉策略参数或回看周期无效")
 	}
 	fast := candleCloseAverage(request.Candles[len(request.Candles)-parameters.FastPeriod:])
 	slow := candleCloseAverage(request.Candles[len(request.Candles)-parameters.SlowPeriod:])
@@ -72,20 +72,20 @@ func candleCloseAverage(candles []trading.Candle) decimal.Decimal {
 func validateStrategyParameters(desc trading.StrategyDescriptor, parameters json.RawMessage) error {
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(parameters))
 	if err != nil {
-		return errors.New("strategy parameters must be valid JSON")
+		return errors.New("策略参数须为有效的 JSON")
 	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(desc.ParameterSchema))
 	if err != nil {
-		return errors.New("strategy parameter schema is invalid")
+		return errors.New("策略参数 Schema 无效")
 	}
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	if err := compiler.AddResource("parameters.json", document); err != nil {
-		return errors.New("strategy parameter schema is invalid")
+		return errors.New("策略参数 Schema 无效")
 	}
 	schema, err := compiler.Compile("parameters.json")
 	if err != nil || schema.Validate(value) != nil {
-		return errors.New("strategy parameters do not match the strategy schema")
+		return errors.New("策略参数不符合 Schema")
 	}
 	return nil
 }
@@ -93,11 +93,11 @@ func validateStrategyParameters(desc trading.StrategyDescriptor, parameters json
 func validateStrategyCandles(request trading.EvaluateRequest) error {
 	duration, ok := quantIntervals[request.Interval]
 	if !ok || request.Market != "spot" && request.Market != "usdm" || request.Instrument == "" || request.EvaluatedAt.IsZero() {
-		return errors.New("strategy context is invalid")
+		return errors.New("策略上下文无效")
 	}
 	_, evaluatedOffset := request.EvaluatedAt.Zone()
 	if evaluatedOffset != 0 || len(request.Candles) == 0 {
-		return errors.New("strategy evaluation requires UTC closed candles")
+		return errors.New("策略计算需要已收盘且时间使用 UTC 的 K 线")
 	}
 	for index, candle := range request.Candles {
 		_, openOffset := candle.OpenTime.Zone()
@@ -107,10 +107,10 @@ func validateStrategyCandles(request trading.EvaluateRequest) error {
 			candle.Low.Sign() <= 0 || candle.Close.Sign() <= 0 || candle.Volume.Sign() < 0 ||
 			candle.High.LessThan(decimal.Max(candle.Open, decimal.Max(candle.Close, candle.Low))) ||
 			candle.Low.GreaterThan(decimal.Min(candle.Open, decimal.Min(candle.Close, candle.High))) {
-			return errors.New("strategy candle is invalid or not closed")
+			return errors.New("策略 K 线无效或尚未收盘")
 		}
 		if index > 0 && !candle.OpenTime.Equal(request.Candles[index-1].OpenTime.Add(duration)) {
-			return fmt.Errorf("strategy candle gap at %s", candle.OpenTime.UTC().Format(time.RFC3339))
+			return fmt.Errorf("策略 K 线在 %s 存在缺口", candle.OpenTime.UTC().Format(time.RFC3339))
 		}
 	}
 	return nil

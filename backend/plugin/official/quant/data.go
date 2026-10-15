@@ -12,7 +12,7 @@ import (
 func quantPathInt64(value string) (int64, error) {
 	number, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 	if err != nil || number <= 0 {
-		return 0, errors.New("positive integer path is required")
+		return 0, errors.New("路径编号须为正整数")
 	}
 	return number, nil
 }

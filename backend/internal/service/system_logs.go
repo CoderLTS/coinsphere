@@ -102,11 +102,11 @@ func NewSystemLogRuntime(gdb *gorm.DB, cfg config.LogConfig, levelVar *slog.Leve
 		ID: 1, Level: levelText, RetentionDays: cfg.RetentionDays, UpdatedAt: time.Now().UTC(),
 	}
 	if err := gdb.Where("id = ?", settings.ID).FirstOrCreate(&settings).Error; err != nil {
-		return nil, fmt.Errorf("initialize system log settings: %w", err)
+		return nil, fmt.Errorf("初始化系统日志设置失败：%w", err)
 	}
 	level, settings.Level, err = parseSystemLogLevel(settings.Level)
 	if err != nil || settings.RetentionDays < 1 || settings.RetentionDays > 365 {
-		return nil, errors.New("stored system log settings are invalid")
+		return nil, errors.New("已保存的系统日志设置无效")
 	}
 	levelVar.Set(level)
 	runtime := &SystemLogRuntime{
@@ -156,7 +156,7 @@ func (r *SystemLogRuntime) UpdateSettings(ctx context.Context, payload SystemLog
 		return SystemLogRuntimeStatus{}, err
 	}
 	if payload.RetentionDays < 1 || payload.RetentionDays > 365 {
-		return SystemLogRuntimeStatus{}, errors.New("retentionDays must be between 1 and 365")
+		return SystemLogRuntimeStatus{}, errors.New("保留天数须为 1 至 365")
 	}
 	now := time.Now().UTC()
 	updatedBy := &userID
@@ -429,7 +429,7 @@ func parseSystemLogLevel(value string) (slog.Level, string, error) {
 	text := strings.ToLower(strings.TrimSpace(value))
 	var level slog.Level
 	if text != "debug" && text != "info" && text != "warn" && text != "error" {
-		return level, "", errors.New("level must be debug, info, warn, or error")
+		return level, "", errors.New("日志级别须为调试、信息、警告或错误")
 	}
 	if err := level.UnmarshalText([]byte(text)); err != nil {
 		return level, "", err
@@ -476,21 +476,21 @@ func (a *App) ListSystemLogs(ctx context.Context, query SystemLogQuery) (M, erro
 
 func (a *App) GetSystemLogRuntime() (SystemLogRuntimeStatus, error) {
 	if a.SystemLogs == nil {
-		return SystemLogRuntimeStatus{}, errors.New("system log runtime is unavailable")
+		return SystemLogRuntimeStatus{}, errors.New("系统日志服务不可用")
 	}
 	return a.SystemLogs.Status(), nil
 }
 
 func (a *App) UpdateSystemLogRuntime(ctx context.Context, payload SystemLogSettingsPayload, userID int64) (SystemLogRuntimeStatus, error) {
 	if a.SystemLogs == nil {
-		return SystemLogRuntimeStatus{}, errors.New("system log runtime is unavailable")
+		return SystemLogRuntimeStatus{}, errors.New("系统日志服务不可用")
 	}
 	return a.SystemLogs.UpdateSettings(ctx, payload, userID)
 }
 
 func (a *App) systemLogQuery(ctx context.Context, query SystemLogQuery) (*gorm.DB, error) {
 	if query.StartTime != nil && query.EndTime != nil && query.StartTime.After(*query.EndTime) {
-		return nil, errors.New("startTime must not be after endTime")
+		return nil, errors.New("开始时间不能晚于结束时间")
 	}
 	if query.Level != "" {
 		if _, _, err := parseSystemLogLevel(query.Level); err != nil {

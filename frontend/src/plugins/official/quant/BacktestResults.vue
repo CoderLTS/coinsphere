@@ -1,7 +1,23 @@
 <template>
   <section v-loading="loading" aria-label="回测结果">
     <header class="result-header"><h2>回测结果</h2><ElButton @click="load">刷新</ElButton></header>
-    <ElAlert v-if="error" :title="error" type="error" :closable="false" />
+    <ElForm inline size="small" @submit.prevent="apply">
+      <BacktestResultConfig
+        v-model:scope="formScope"
+        v-model:filters="formFilters"
+        :filter-schema="filterSchema"
+      />
+      <ElFormItem
+        ><ElButton type="primary" native-type="submit">查询</ElButton
+        ><ElButton @click="reset">重置</ElButton></ElFormItem
+      >
+    </ElForm>
+    <ElAlert
+      v-if="queryError || error"
+      :title="queryError || error"
+      type="error"
+      :closable="false"
+    />
     <ElTable :data="backtests" empty-text="暂无回测结果" @row-click="select">
       <ElTableColumn label="范围" min-width="180"
         ><template #default="{ row }"
@@ -41,17 +57,73 @@
       >
     </ElTable>
     <ElDialog v-model="detailVisible" title="回测分析" width="95%" destroy-on-close
-      ><BacktestAnalysis v-if="selected" :backtest="selected" :context="context"
+      ><BacktestAnalysis v-if="selected" :backtest="selected" :context="query"
     /></ElDialog>
   </section>
 </template>
 <script setup lang="ts">
-  import type { PluginResultContext } from '@/plugins/sdk'
+  import type { PluginPageContext } from '@/plugins/sdk'
+  import { useRouteFilters } from '@/plugins/ui'
+  import BacktestResultConfig from './BacktestResultConfig.vue'
   import { fetchDirectBacktests, type QuantBacktest } from './api'
   import { decimalPercent } from './decimal'
   import { formatDateTime } from '@/utils/date'
   import BacktestAnalysis from './BacktestAnalysis.vue'
-  const props = defineProps<{ context: PluginResultContext }>()
+  defineProps<{ context: PluginPageContext }>()
+  const { form, applied, apply, reset, queryError } = useRouteFilters({
+    workflowId: 0,
+    nodeInstanceId: '',
+    venue: '',
+    market: '',
+    instrument: '',
+    limit: 50
+  })
+  const formScope = computed({
+    get: () => ({ workflowId: form.workflowId || undefined, nodeInstanceId: form.nodeInstanceId }),
+    set: (value: Record<string, any>) => {
+      form.workflowId = Number(value.workflowId || 0)
+      form.nodeInstanceId = String(value.nodeInstanceId || '')
+    }
+  })
+  const formFilters = computed({
+    get: () => ({
+      venue: form.venue,
+      market: form.market,
+      instrument: form.instrument,
+      limit: form.limit
+    }),
+    set: (value: Record<string, any>) => {
+      form.venue = value.venue || ''
+      form.market = value.market || ''
+      form.instrument = value.instrument || ''
+      form.limit = value.limit || 50
+    }
+  })
+  const filterSchema = {
+    type: 'object',
+    properties: {
+      venue: { type: 'string', title: '交易所' },
+      market: {
+        type: 'string',
+        title: '市场',
+        enum: ['spot', 'usdm'],
+        enumLabels: ['现货', 'U 本位合约']
+      },
+      instrument: { type: 'string', title: '交易对' },
+      limit: { type: 'integer', title: '显示条数', minimum: 1, maximum: 200 }
+    }
+  }
+  const query = computed(() => ({
+    scope: {
+      ...(applied.value.workflowId ? { workflowId: applied.value.workflowId } : {}),
+      ...(applied.value.nodeInstanceId ? { nodeInstanceId: applied.value.nodeInstanceId } : {})
+    },
+    filters: Object.fromEntries(
+      Object.entries(applied.value).filter(
+        ([key, value]) => ['venue', 'market', 'instrument', 'limit'].includes(key) && value !== ''
+      )
+    )
+  }))
   const router = useRouter(),
     backtests = ref<QuantBacktest[]>([]),
     selected = ref<QuantBacktest>()
@@ -65,10 +137,15 @@
   let request = 0
   const load = async () => {
     const current = ++request
+    if (queryError.value) {
+      backtests.value = []
+      loading.value = false
+      return
+    }
     loading.value = true
     error.value = ''
     try {
-      const result = await fetchDirectBacktests(props.context)
+      const result = await fetchDirectBacktests(query.value)
       if (current === request) backtests.value = result.items
     } catch (cause: any) {
       if (current === request) {
@@ -79,7 +156,14 @@
       if (current === request) loading.value = false
     }
   }
-  watch(() => props.context, load, { immediate: true, deep: true })
+  watch(
+    [applied, queryError],
+    () => {
+      detailVisible.value = false
+      void load()
+    },
+    { immediate: true }
+  )
 </script>
 <style scoped>
   .result-header {

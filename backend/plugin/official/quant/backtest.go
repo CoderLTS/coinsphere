@@ -25,7 +25,7 @@ func (a quantEvaluateAction) Execute(ctx context.Context, request sdk.ActionRequ
 	}
 	desc, strategy, ok := a.runtime.registry.Strategy(config.StrategyID)
 	if !ok {
-		return sdk.ActionResult{}, errors.New("quant strategy is unavailable")
+		return sdk.ActionResult{}, errors.New("量化策略不可用")
 	}
 	if err := validateStrategyParameters(desc, config.Parameters); err != nil {
 		return sdk.ActionResult{}, err
@@ -38,7 +38,7 @@ func (a quantEvaluateAction) Execute(ctx context.Context, request sdk.ActionRequ
 		EventTime string `json:"eventTime"`
 	}
 	if json.Unmarshal(request.Input, &input) != nil {
-		return sdk.ActionResult{}, errors.New("quant evaluation input is invalid")
+		return sdk.ActionResult{}, errors.New("量化策略计算输入无效")
 	}
 	eventTime, err := parseQuantUTCTime(input.EventTime)
 	if err != nil {
@@ -49,7 +49,7 @@ func (a quantEvaluateAction) Execute(ctx context.Context, request sdk.ActionRequ
 		return sdk.ActionResult{}, err
 	}
 	if len(candles) != lookback || !candles[len(candles)-1].CloseTime.Equal(eventTime) {
-		return sdk.ActionResult{}, errors.New("quant strategy has insufficient closed lookback")
+		return sdk.ActionResult{}, errors.New("量化策略所需的已收盘回看数据不足")
 	}
 	target, err := strategy.Evaluate(ctx, trading.EvaluateRequest{
 		Market: config.Market, Instrument: config.Instrument, Interval: config.Interval,
@@ -60,7 +60,7 @@ func (a quantEvaluateAction) Execute(ctx context.Context, request sdk.ActionRequ
 		return sdk.ActionResult{}, err
 	}
 	if target.LessThan(decimal.NewFromInt(-1)) || target.GreaterThan(quantOne) {
-		return sdk.ActionResult{}, errors.New("quant strategy target must be between -1 and 1")
+		return sdk.ActionResult{}, errors.New("量化策略目标仓位须为 -1 至 1")
 	}
 	return sdk.ActionResult{Output: mustMarshal(map[string]any{
 		"venue": config.Venue, "strategyId": desc.ID, "strategyVersion": desc.Version, "target": target.String(),
@@ -82,7 +82,7 @@ func (a quantBacktestAction) Execute(ctx context.Context, request sdk.ActionRequ
 	}
 	desc, strategy, ok := a.runtime.registry.Strategy(config.StrategyID)
 	if !ok {
-		return sdk.ActionResult{}, errors.New("quant strategy is unavailable")
+		return sdk.ActionResult{}, errors.New("量化策略不可用")
 	}
 	if err := validateStrategyParameters(desc, config.Parameters); err != nil {
 		return sdk.ActionResult{}, err
@@ -96,7 +96,7 @@ func (a quantBacktestAction) Execute(ctx context.Context, request sdk.ActionRequ
 		return sdk.ActionResult{}, err
 	}
 	if len(candles) > 1_000_000 {
-		return sdk.ActionResult{}, errors.New("quant backtest exceeds the 1,000,000 candle limit")
+		return sdk.ActionResult{}, errors.New("量化回测超过 100 万根 K 线限制")
 	}
 	simulation, err := simulateQuantBacktest(ctx, strategy, desc, config, candles, lookback)
 	if err != nil {
@@ -108,11 +108,11 @@ func (a quantBacktestAction) Execute(ctx context.Context, request sdk.ActionRequ
 	}
 	workflowID, err := quantInt64(request.Revision.WorkflowID)
 	if err != nil {
-		return sdk.ActionResult{}, errors.New("quant workflow identity is invalid")
+		return sdk.ActionResult{}, errors.New("量化工作流标识无效")
 	}
 	revisionID, err := quantInt64(request.Revision.RevisionID)
 	if err != nil {
-		return sdk.ActionResult{}, errors.New("quant revision identity is invalid")
+		return sdk.ActionResult{}, errors.New("量化版本标识无效")
 	}
 	parameters, _ := json.Marshal(json.RawMessage(config.Parameters))
 	manifestJSON, _ := json.Marshal(manifest)
@@ -128,11 +128,11 @@ func (a quantBacktestAction) Execute(ctx context.Context, request sdk.ActionRequ
 		Detail: string(detail), CreatedAt: time.Now().UTC(),
 	}
 	if err := a.runtime.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
-		return sdk.ActionResult{}, errors.New("persist Quant backtest summary failed")
+		return sdk.ActionResult{}, errors.New("保存量化回测摘要失败")
 	}
 	stored, ok, err := a.runtime.loadQuantBacktestByOperation(ctx, request.OperationKey)
 	if err != nil || !ok {
-		return sdk.ActionResult{}, errors.New("load persisted Quant backtest failed")
+		return sdk.ActionResult{}, errors.New("读取已保存的量化回测失败")
 	}
 	return quantBacktestActionResult(stored), nil
 }
@@ -158,7 +158,7 @@ type quantBacktestPoint struct {
 
 func simulateQuantBacktest(ctx context.Context, strategy trading.Strategy, desc trading.StrategyDescriptor, config quantBacktestConfig, candles []quantCandle, lookback int) (quantBacktestSimulation, error) {
 	if len(candles) < lookback+1 {
-		return quantBacktestSimulation{}, errors.New("quant backtest has insufficient lookback or no next candle open")
+		return quantBacktestSimulation{}, errors.New("量化回测回看数据不足或缺少下一根 K 线开盘价")
 	}
 	sdkCandles := quantSDKCandles(candles)
 	if err := validateStrategyCandles(trading.EvaluateRequest{
@@ -184,7 +184,7 @@ func simulateQuantBacktest(ctx context.Context, strategy trading.Strategy, desc 
 			return quantBacktestSimulation{}, err
 		}
 		if target.LessThan(decimal.NewFromInt(-1)) || target.GreaterThan(quantOne) {
-			return quantBacktestSimulation{}, errors.New("quant strategy target must be between -1 and 1")
+			return quantBacktestSimulation{}, errors.New("量化策略目标仓位须为 -1 至 1")
 		}
 		next := candles[index+1]
 		equityAtOpen := cash.Add(quantity.Mul(next.Open))
@@ -205,7 +205,7 @@ func simulateQuantBacktest(ctx context.Context, strategy trading.Strategy, desc 
 		}
 		equity := cash.Add(quantity.Mul(next.Close))
 		if equity.Sign() < 0 {
-			return quantBacktestSimulation{}, errors.New("quant backtest equity was depleted")
+			return quantBacktestSimulation{}, errors.New("量化回测权益已耗尽")
 		}
 		if equity.GreaterThan(peak) {
 			peak = equity
@@ -231,11 +231,11 @@ func simulateQuantBacktest(ctx context.Context, strategy trading.Strategy, desc 
 
 func (q *quantRuntime) loadQuantCandles(ctx context.Context, config quantSeriesConfig, start, end time.Time, limit int) ([]quantCandle, error) {
 	if q.marketData == nil {
-		return nil, errors.New("quant market data registry is unavailable")
+		return nil, errors.New("量化行情注册表不可用")
 	}
 	provider, ok := q.marketData.MarketDataProvider(config.Venue)
 	if !ok {
-		return nil, fmt.Errorf("quant market data provider %q is unavailable", config.Venue)
+		return nil, fmt.Errorf("量化行情数据源 %q 不可用", config.Venue)
 	}
 	items, err := provider.Candles(ctx, trading.CandleQuery{
 		Market: config.Market, Instrument: config.Instrument, Interval: config.Interval,
@@ -266,7 +266,7 @@ func quantStrategyLookback(desc trading.StrategyDescriptor, parameters json.RawM
 			SlowPeriod int `json:"slowPeriod"`
 		}
 		if json.Unmarshal(parameters, &value) != nil || value.SlowPeriod < desc.MinimumLookback || value.SlowPeriod > 200 {
-			return 0, errors.New("sma crossover lookback is invalid")
+			return 0, errors.New("均线交叉回看周期无效")
 		}
 		return value.SlowPeriod, nil
 	}
@@ -276,11 +276,11 @@ func quantStrategyLookback(desc trading.StrategyDescriptor, parameters json.RawM
 func parseQuantUTCTime(value string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, errors.New("quant time must use RFC3339 UTC")
+		return time.Time{}, errors.New("量化时间须为 RFC3339 格式的 UTC 时间")
 	}
 	_, offset := parsed.Zone()
 	if offset != 0 {
-		return time.Time{}, errors.New("quant time must use UTC")
+		return time.Time{}, errors.New("量化时间须使用 UTC")
 	}
 	return parsed.UTC(), nil
 }
@@ -328,7 +328,7 @@ func (q *quantRuntime) loadQuantBacktestByOperation(ctx context.Context, operati
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return quantBacktest{}, false, nil
 		}
-		return quantBacktest{}, false, errors.New("load Quant backtest failed")
+		return quantBacktest{}, false, errors.New("读取量化回测失败")
 	}
 	return backtest, true, nil
 }

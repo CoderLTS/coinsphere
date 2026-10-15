@@ -8,6 +8,12 @@
       @search="handleSearch"
     />
 
+    <ElAlert
+      v-if="queryError || error"
+      :title="queryError || error"
+      type="error"
+      :closable="false"
+    />
     <div class="plugin-toolbar">
       <div class="plugin-summary" aria-live="polite">
         <strong>{{ filteredPlugins.length }}</strong>
@@ -68,23 +74,72 @@
             </span>
           </div>
         </header>
-        <p class="plugin-installation-facts"
-          >{{ selectedPlugin.installed ? '已安装' : '未安装或已停用' }} ·
-          {{ selectedPlugin.compiled ? `已编译 v${selectedPlugin.compiledVersion}` : '未编译' }} ·
-          {{ selectedPlugin.loaded ? '已加载' : '未加载' }}</p
-        >
-        <ElAlert
-          v-if="selectedPlugin.reason"
-          :title="unavailableReasons[selectedPlugin.reason] || '插件尚未就绪'"
-          type="warning"
-          :closable="false"
-        />
-
         <ElTabs v-model="detailTab" class="plugin-detail__tabs">
+          <ElTabPane label="概览" name="overview">
+            <p class="plugin-purpose">{{
+              pluginPurposes[selectedPlugin.id] ||
+              selectedPlugin.nodes[0]?.description ||
+              '扩展工作流与业务页面。'
+            }}</p>
+            <dl class="plugin-overview">
+              <div
+                ><dt>可用状态</dt
+                ><dd>{{
+                  selectedPlugin.loaded ? '可用于工作流' : '当前不可用，请查看诊断'
+                }}</dd></div
+              >
+              <div
+                ><dt>工作流节点</dt><dd>{{ selectedPlugin.nodes.length }} 个</dd></div
+              >
+              <div
+                ><dt>业务页面</dt><dd>{{ selectedPlugin.pages.length }} 个</dd></div
+              >
+            </dl>
+            <ElButton
+              v-if="selectedPlugin.pages.length"
+              type="primary"
+              plain
+              @click="detailTab = 'pages'"
+              >查看页面入口</ElButton
+            >
+            <ElButton v-if="selectedPlugin.nodes.length" @click="detailTab = 'nodes'"
+              >查看节点</ElButton
+            >
+          </ElTabPane>
+          <ElTabPane name="pages">
+            <template #label>
+              <span class="detail-tab-label">
+                页面
+                <small>{{ selectedPlugin.pages.length }}</small>
+              </span>
+            </template>
+
+            <div v-if="selectedPlugin.pages.length" class="page-list">
+              <div
+                v-for="page in selectedPlugin.pages"
+                :key="`${page.kind}:${page.pageKey}`"
+                class="detail-row"
+              >
+                <ArtSvgIcon icon="ri:layout-grid-line" />
+                <strong>{{ displayText(page.title, '扩展页面') }}</strong>
+                <ElTag size="small" effect="plain">{{ pageKindLabel(page.kind) }}</ElTag>
+                <ElText size="small">{{ mountedPage(page) ? '已挂载到菜单' : '尚未挂载' }}</ElText>
+                <ElButton
+                  link
+                  type="primary"
+                  :disabled="!selectedPlugin.loaded"
+                  @click="openPage(page)"
+                  >打开页面</ElButton
+                >
+                <ElButton link @click="router.push('/system/menu')">管理菜单</ElButton>
+              </div>
+            </div>
+            <ElEmpty v-else :image-size="64" description="未注册页面" />
+          </ElTabPane>
           <ElTabPane name="nodes">
             <template #label>
               <span class="detail-tab-label">
-                注册节点
+                节点
                 <small>{{ selectedPlugin.nodes.length }}</small>
               </span>
             </template>
@@ -109,7 +164,7 @@
                     @click="selectedNodeType = node.type"
                   >
                     <span class="node-copy">
-                      <strong>{{ localizeText(node.title, '扩展节点') }}</strong>
+                      <strong>{{ displayText(node.title, '扩展节点') }}</strong>
                       <small>
                         {{ nodeKindLabel(node.kind) }} / {{ configFields(node).length }} 项参数
                       </small>
@@ -130,7 +185,7 @@
                   <p class="node-location">{{ pluginLabel(selectedPlugin) }} / 注册节点</p>
                   <div class="node-config__title">
                     <h3 id="plugin-node-title">{{
-                      localizeText(selectedNode.title, '扩展节点')
+                      displayText(selectedNode.title, '扩展节点')
                     }}</h3>
                     <ElTag size="small" effect="plain">{{
                       nodeKindLabel(selectedNode.kind)
@@ -144,12 +199,12 @@
                 </div>
                 <dl v-if="configFields(selectedNode).length" class="parameter-list">
                   <div
-                    v-for="([fieldName, schema], index) in configFields(selectedNode)"
+                    v-for="[fieldName, schema] in configFields(selectedNode)"
                     :key="fieldName"
                     class="parameter-row"
                   >
                     <dt>
-                      <strong>{{ schemaTitle(schema, index) }}</strong>
+                      <strong>{{ schemaTitle(schema, fieldName) }}</strong>
                       <span class="parameter-tags">
                         <span>{{ schemaTypeLabel(schema.type) }}</span>
                         <ElTag
@@ -171,8 +226,8 @@
                       </span>
                     </dt>
                     <dd>
-                      <p v-if="localizeText(schema.description)" class="parameter-description">
-                        {{ localizeText(schema.description) }}
+                      <p v-if="displayText(schema.description)" class="parameter-description">
+                        {{ displayText(schema.description) }}
                       </p>
                       <p v-if="schemaDefault(schema)" class="parameter-meta">
                         <span>默认值</span>
@@ -192,26 +247,26 @@
             <ElEmpty v-else :image-size="64" description="未注册节点" />
           </ElTabPane>
 
-          <ElTabPane name="pages">
-            <template #label>
-              <span class="detail-tab-label">
-                注册页面
-                <small>{{ selectedPlugin.pages.length }}</small>
-              </span>
-            </template>
+          <ElTabPane label="诊断" name="diagnostics">
+            <p class="plugin-installation-facts"
+              >{{ selectedPlugin.installed ? '已安装' : '未安装或已停用' }} ·
+              {{ selectedPlugin.compiled ? `已编译 v${selectedPlugin.compiledVersion}` : '未编译' }}
+              · {{ selectedPlugin.loaded ? '已加载' : '未加载' }}</p
+            >
+            <ElAlert
+              v-if="selectedPlugin.reason"
+              :title="unavailableReasons[selectedPlugin.reason] || '插件尚未就绪'"
+              type="warning"
+              :closable="false"
+            />
 
-            <div v-if="selectedPlugin.pages.length" class="page-list">
-              <div
-                v-for="page in selectedPlugin.pages"
-                :key="`${page.kind}:${page.pageKey}`"
-                class="detail-row"
-              >
-                <ArtSvgIcon icon="ri:layout-grid-line" />
-                <strong>{{ localizeText(page.title, '扩展页面') }}</strong>
-                <ElTag size="small" effect="plain">{{ pageKindLabel(page.kind) }}</ElTag>
-              </div>
-            </div>
-            <ElEmpty v-else :image-size="64" description="未注册页面" />
+            <dl class="plugin-overview"
+              ><div
+                ><dt>插件标识</dt><dd>{{ selectedPlugin.id }}</dd></div
+              ><div
+                ><dt>运行版本</dt><dd>{{ selectedPlugin.version }}</dd></div
+              ></dl
+            >
           </ElTabPane>
         </ElTabs>
       </section>
@@ -222,7 +277,8 @@
 
 <script setup lang="ts">
   import { Refresh, Search } from '@element-plus/icons-vue'
-  import { fetchGetInstalledPlugins } from '@/api/system'
+  import { fetchGetInstalledPlugins, fetchMenuPages, type MenuPageOption } from '@/api/system'
+  import { useRouteFilters } from '@/plugins/ui'
 
   defineOptions({ name: 'Plugins' })
 
@@ -241,14 +297,46 @@
   const selectedPluginId = ref<string>()
   const selectedNodeType = ref<string>()
   const nodeKeyword = ref('')
-  const detailTab = ref('nodes')
+  const detailTab = ref('overview')
+  const error = ref('')
+  const router = useRouter()
+  const menuPages = ref<MenuPageOption[]>([])
+  const pluginPurposes: Record<string, string> = {
+    'official.ai': '配置 AI 模型，为工作流与助手提供模型调用。',
+    'official.connector': '通过受控 HTTP、Webhook 和 WebSocket 连接外部服务。',
+    'official.notification': '组合通知内容并发送站内、钉钉或邮件通知。',
+    'official.qq': '通过 QQ 接收消息与发送通知。',
+    'official.quant': '配置策略、计算指标并分析回测结果。',
+    'official.binance': '查询币安品种与行情，查看模拟交易结果。'
+  }
+  const mountedPage = (page: InstalledPlugin['pages'][number]) =>
+    menuPages.value.find(
+      (item) =>
+        item.pluginId === selectedPlugin.value?.id &&
+        item.pageKey === page.pageKey &&
+        item.contributionType === (page.kind === 'resultPage' ? 'result' : 'page')
+    )?.menuId
+  const openPage = (page: InstalledPlugin['pages'][number]) =>
+    router.push(
+      '/plugins/' +
+        selectedPlugin.value!.id +
+        '/' +
+        (page.kind === 'resultPage' ? 'result' : 'page') +
+        '/' +
+        page.pageKey
+    )
 
   const initialFilters = {
     keyword: '',
     contribution: ''
   }
-  const formFilters = reactive({ ...initialFilters })
-  const appliedFilters = reactive({ ...initialFilters })
+  const {
+    form: formFilters,
+    applied: appliedFilters,
+    apply,
+    reset,
+    queryError
+  } = useRouteFilters(initialFilters)
 
   const defaultPluginVisual = {
     icon: 'ri:puzzle-2-line',
@@ -290,31 +378,6 @@
     runPanels: 'ri:layout-line'
   }
 
-  const textReplacements: Array<[RegExp, string]> = [
-    [/Binance/gi, '币安'],
-    [/K\s*线/gi, '蜡烛图'],
-    [/WebSocket/gi, '长连接'],
-    [/Webhook/gi, '网络回调'],
-    [/TLS\s*SMTP/gi, '安全邮件协议'],
-    [/HTTP\s*请求/gi, '网络请求'],
-    [/HTTP/gi, '网络协议'],
-    [/Paper/gi, '模拟交易'],
-    [/AI/gi, '智能模型'],
-    [/QQ/gi, '即时通信'],
-    [/MACD/gi, '指数平滑异同移动平均线'],
-    [/KDJ/gi, '随机指标'],
-    [/RSI/gi, '相对强弱指标'],
-    [/SMA/gi, '简单移动平均线'],
-    [/REST/gi, '接口'],
-    [/UTC/gi, '协调世界时'],
-    [/API/gi, '接口'],
-    [/URL/gi, '地址'],
-    [/JSON/gi, '结构化数据'],
-    [/CloudEvent/gi, '云事件'],
-    [/Cron/gi, '定时表达式'],
-    [/\bID\b/gi, '标识']
-  ]
-
   const schemaTypeLabels: Record<string, string> = {
     string: '文本',
     integer: '整数',
@@ -322,19 +385,6 @@
     boolean: '布尔值',
     array: '列表',
     object: '对象'
-  }
-
-  const valueLabels: Record<string, string> = {
-    binance: '币安',
-    spot: '现货',
-    usdm: '合约',
-    open: '开仓',
-    reduce: '减仓',
-    buy: '买入',
-    sell: '卖出',
-    hold: '观望',
-    true: '是',
-    false: '否'
   }
 
   const pluginVisual = (plugin: InstalledPlugin) => ({
@@ -345,14 +395,7 @@
     '--plugin-color': pluginVisual(plugin).color,
     '--plugin-background': pluginVisual(plugin).background
   })
-  const localizeText = (value: unknown, fallback = '') => {
-    let result = String(value || '').trim()
-    textReplacements.forEach(([pattern, replacement]) => {
-      result = result.replace(pattern, replacement)
-    })
-    result = result.replace(/\s+/g, ' ')
-    return /[A-Za-z]/.test(result) ? fallback : result
-  }
+  const displayText = (value: unknown, fallback = '') => String(value ?? '').trim() || fallback
   const pluginLabel = (plugin: InstalledPlugin) => plugin.name || plugin.id
   const contributionLabel = (value: string) => contributionLabels[value] || '其他能力'
   const contributionIcon = (value: string) => contributionIcons[value] || 'ri:add-circle-line'
@@ -387,11 +430,12 @@
   ])
 
   const filteredPlugins = computed(() => {
-    const keyword = appliedFilters.keyword.trim()
+    const keyword = appliedFilters.value.keyword.trim()
     return plugins.value.filter((plugin) => {
       const matchesKeyword = !keyword || pluginLabel(plugin).includes(keyword)
       const matchesContribution =
-        !appliedFilters.contribution || plugin.contributes.includes(appliedFilters.contribution)
+        !appliedFilters.value.contribution ||
+        plugin.contributes.includes(appliedFilters.value.contribution)
       return matchesKeyword && matchesContribution
     })
   })
@@ -413,7 +457,7 @@
     const keyword = nodeKeyword.value.trim().toLowerCase()
     return (selectedPlugin.value?.nodes || []).filter(
       (node) =>
-        node.title.toLowerCase().includes(keyword) || localizeText(node.title).includes(keyword)
+        node.title.toLowerCase().includes(keyword) || displayText(node.title).includes(keyword)
     )
   })
   const selectedNode = computed(
@@ -428,40 +472,25 @@
       selectedPluginId.value = selectedPlugin.value?.id
       selectedNodeType.value = undefined
       nodeKeyword.value = ''
-      detailTab.value = selectedPlugin.value?.nodes.length ? 'nodes' : 'pages'
+      detailTab.value = 'overview'
     }
   )
   const isConfigRequired = (node: PluginNode, fieldName: string) =>
     Array.isArray(node.configSchema?.required) && node.configSchema.required.includes(fieldName)
-  const schemaTitle = (schema: ConfigSchema, index: number) =>
-    localizeText(schema.title, `参数 ${index + 1}`)
+  const schemaTitle = (schema: ConfigSchema, fieldName: string) =>
+    displayText(schema.title, fieldName)
   const schemaTypeLabel = (value: unknown) =>
     Array.isArray(value)
       ? value.map((item) => schemaTypeLabels[String(item)] || '任意').join('、')
       : schemaTypeLabels[String(value)] || '任意'
-  const formatDisplayValue = (value: unknown): string => {
-    if (typeof value === 'boolean') return value ? '是' : '否'
-    if (typeof value === 'number') return String(value)
-    if (typeof value === 'string') {
-      const normalized = value.trim()
-      if (valueLabels[normalized]) return valueLabels[normalized]
-
-      const interval = /^(\d+)(m|h|d|w)$/.exec(normalized)
-      if (interval) {
-        const units = { m: '分钟', h: '小时', d: '天', w: '周' }
-        return interval[1] + ' ' + units[interval[2] as keyof typeof units]
-      }
-
-      return localizeText(normalized)
-    }
-    if (Array.isArray(value)) {
-      return value
-        .map((item) => formatDisplayValue(item))
-        .filter(Boolean)
-        .join('、')
-    }
-    return ''
-  }
+  const formatDisplayValue = (value: unknown): string =>
+    typeof value === 'boolean'
+      ? value
+        ? '是'
+        : '否'
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value ?? '')
   const schemaDefault = (schema: ConfigSchema) =>
     Object.prototype.hasOwnProperty.call(schema, 'default')
       ? formatDisplayValue(schema.default)
@@ -477,16 +506,22 @@
       .join('、')
   }
   const handleSearch = (filters: Record<string, string>) => {
-    Object.assign(appliedFilters, initialFilters, filters)
+    Object.assign(formFilters, filters)
+    void apply()
   }
   const handleReset = () => {
-    Object.assign(formFilters, initialFilters)
-    Object.assign(appliedFilters, initialFilters)
+    void reset()
   }
   const loadPlugins = async () => {
+    if (loading.value) return
     loading.value = true
+    error.value = ''
     try {
-      plugins.value = await fetchGetInstalledPlugins()
+      const [items, pages] = await Promise.all([fetchGetInstalledPlugins(), fetchMenuPages()])
+      plugins.value = items
+      menuPages.value = pages
+    } catch (cause: any) {
+      error.value = cause.message
     } finally {
       loading.value = false
     }
@@ -930,5 +965,26 @@
       grid-template-columns: minmax(0, 1fr);
       gap: 8px;
     }
+  }
+  .plugin-purpose {
+    max-width: 70ch;
+    line-height: 1.8;
+  }
+  .plugin-overview {
+    display: grid;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .plugin-overview > div {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 12px;
+  }
+  .plugin-overview dt {
+    color: var(--el-text-color-secondary);
+  }
+  .plugin-overview dd {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 </style>

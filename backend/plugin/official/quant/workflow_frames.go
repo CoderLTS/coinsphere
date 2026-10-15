@@ -64,7 +64,7 @@ type quantWorkflowFrames struct {
 func (q *quantRuntime) compileWorkflowFrames(request sdk.ActionRequest) (*quantWorkflowFrames, error) {
 	var g workflowgraph.Graph
 	if json.Unmarshal(request.GraphSnapshot, &g) != nil || g.SchemaVersion != workflowgraph.SchemaVersion {
-		return nil, errors.New("Quant requires a fixed workflow graph snapshot")
+		return nil, errors.New("量化执行需要固定的工作流定义快照")
 	}
 	nodes := map[string]workflowgraph.Node{}
 	for _, node := range g.Nodes {
@@ -87,7 +87,7 @@ func (q *quantRuntime) compileWorkflowFrames(request sdk.ActionRequest) (*quantW
 		selected[id] = true
 		node := nodes[id]
 		if q.frameActions[node.NodeType] == nil && node.NodeType != "core.condition" {
-			return nil, fmt.Errorf("Quant strategy node %q is not supported in backtests", id)
+			return nil, fmt.Errorf("量化策略节点 %q 不支持回测", id)
 		}
 		if node.NodeType == "official.quant.output_signal" {
 			results = append(results, id)
@@ -100,7 +100,7 @@ func (q *quantRuntime) compileWorkflowFrames(request sdk.ActionRequest) (*quantW
 		}
 	}
 	if len(results) == 0 {
-		return nil, errors.New("Quant backtest must reach an output signal")
+		return nil, errors.New("量化回测须到达信号输出节点")
 	}
 	strategy := workflowgraph.Graph{SchemaVersion: 3}
 	for _, node := range g.Nodes {
@@ -122,7 +122,7 @@ func (q *quantRuntime) compileWorkflowFrames(request sdk.ActionRequest) (*quantW
 func (f *quantWorkflowFrames) ExecuteFrame(ctx context.Context, request quantFrameRequest) (quantFrameResult, error) {
 	var source map[string]any
 	if json.Unmarshal(request.SourceOutput, &source) != nil {
-		return quantFrameResult{}, errors.New("invalid Quant frame source")
+		return quantFrameResult{}, errors.New("量化行情帧来源无效")
 	}
 	outputs := map[string]map[string]any{f.sourceID: source}
 	result := quantFrameResult{NodeOutputs: map[string]json.RawMessage{f.sourceID: request.SourceOutput}}
@@ -152,7 +152,7 @@ func (f *quantWorkflowFrames) ExecuteFrame(ctx context.Context, request quantFra
 			desc = sdk.NodeDescriptor{Version: "1.0.0", InputSchema: workflowgraph.ConditionInputSchema, OutputSchema: workflowgraph.ConditionOutputSchema, Branches: []string{"true", "false", "unavailable"}}
 		}
 		if desc.Version != node.NodeVersion || workflowgraph.ValidateValue(desc.InputSchema, input) != nil {
-			return result, errors.New("Quant frame input does not match its fixed node schema")
+			return result, errors.New("量化行情帧输入不符合固定节点 Schema")
 		}
 		action.NodeInstanceID = id
 		action.Input = mustMarshal(input)
@@ -177,10 +177,10 @@ func (f *quantWorkflowFrames) ExecuteFrame(ctx context.Context, request quantFra
 		}
 		var output map[string]any
 		if json.Unmarshal(out.Output, &output) != nil || output == nil || workflowgraph.ValidateValue(desc.OutputSchema, output) != nil {
-			return result, errors.New("invalid Quant frame output")
+			return result, errors.New("量化行情帧输出无效")
 		}
 		if len(desc.Branches) > 0 && !containsQuantString(desc.Branches, fmt.Sprint(output["branch"])) {
-			return result, errors.New("Quant frame returned an undeclared branch")
+			return result, errors.New("量化行情帧返回了未声明的分支")
 		}
 		outputs[id] = output
 		result.NodeOutputs[id] = out.Output

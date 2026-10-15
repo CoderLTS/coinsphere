@@ -17,7 +17,7 @@ import (
 func syntheticPackage(t *testing.T, v string) string {
 	t.Helper()
 	root := t.TempDir()
-	m := manifest.Manifest{SchemaVersion: 1, ID: "example.business", Name: "Synthetic business", Version: v, SDKMajor: version.SDKMajor, RequiresCore: ">=5.0.0", Backend: manifest.Backend{Module: "example.test/business", Package: "backend"}, Frontend: manifest.Frontend{Entry: "frontend/index.ts"}, Migrations: manifest.Migrations{Directory: "migrations"}, Contributes: []string{"nodes", "migrations"}}
+	m := manifest.Manifest{SchemaVersion: 1, ID: "example.business", Name: "Synthetic business", Version: v, SDKMajor: version.SDKMajor, RequiresCore: ">=1.0.0", Backend: manifest.Backend{Module: "example.test/business", Package: "backend"}, Frontend: manifest.Frontend{Entry: "frontend/index.ts"}, Migrations: manifest.Migrations{Directory: "migrations"}, Contributes: []string{"nodes", "migrations"}}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
