@@ -2,7 +2,12 @@
 <template>
   <div class="editor-toolbar">
     <div class="editor-toolbar__back">
-      <ElTooltip content="返回" placement="bottom">
+      <ElTooltip
+        :enterable="false"
+        popper-class="workflow-toolbar-tooltip"
+        content="返回"
+        placement="bottom"
+      >
         <ElButton
           plain
           class="editor-toolbar__icon-btn"
@@ -16,7 +21,12 @@
 
     <div class="editor-toolbar__tools editor-toolbar__surface">
       <div class="editor-toolbar__tools-group editor-toolbar__tools-group--left">
-        <ElTooltip :content="materialsVisible ? '隐藏节点面板' : '显示节点面板'" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          :content="materialsVisible ? '隐藏节点面板' : '显示节点面板'"
+          placement="bottom"
+        >
           <ElButton
             :class="[
               'editor-toolbar__icon-btn',
@@ -30,7 +40,12 @@
         </ElTooltip>
 
         <div class="editor-toolbar__zoom-group">
-          <ElTooltip content="撤销" placement="bottom">
+          <ElTooltip
+            :enterable="false"
+            popper-class="workflow-toolbar-tooltip"
+            content="撤销"
+            placement="bottom"
+          >
             <ElButton
               class="editor-toolbar__icon-btn"
               :disabled="readOnly || !canUndo"
@@ -41,7 +56,12 @@
             </ElButton>
           </ElTooltip>
 
-          <ElTooltip content="前进" placement="bottom">
+          <ElTooltip
+            :enterable="false"
+            popper-class="workflow-toolbar-tooltip"
+            content="前进"
+            placement="bottom"
+          >
             <ElButton
               class="editor-toolbar__icon-btn"
               :disabled="readOnly || !canRedo"
@@ -52,7 +72,12 @@
             </ElButton>
           </ElTooltip>
 
-          <ElTooltip content="缩小" placement="bottom">
+          <ElTooltip
+            :enterable="false"
+            popper-class="workflow-toolbar-tooltip"
+            content="缩小"
+            placement="bottom"
+          >
             <ElButton class="editor-toolbar__icon-btn" aria-label="缩小" @click="$emit('zoom-out')">
               <ElIcon><Minus /></ElIcon>
             </ElButton>
@@ -60,14 +85,24 @@
 
           <span class="editor-toolbar__zoom">{{ zoomText }}</span>
 
-          <ElTooltip content="放大" placement="bottom">
+          <ElTooltip
+            :enterable="false"
+            popper-class="workflow-toolbar-tooltip"
+            content="放大"
+            placement="bottom"
+          >
             <ElButton class="editor-toolbar__icon-btn" aria-label="放大" @click="$emit('zoom-in')">
               <ElIcon><Plus /></ElIcon>
             </ElButton>
           </ElTooltip>
         </div>
 
-        <ElTooltip content="居中" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          content="居中"
+          placement="bottom"
+        >
           <ElButton
             class="editor-toolbar__icon-btn"
             aria-label="居中"
@@ -77,7 +112,12 @@
           </ElButton>
         </ElTooltip>
 
-        <ElTooltip content="适配画布" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          content="适配画布"
+          placement="bottom"
+        >
           <ElButton
             class="editor-toolbar__icon-btn"
             aria-label="适应画布"
@@ -91,7 +131,12 @@
       <span class="editor-toolbar__divider" aria-hidden="true"></span>
 
       <div class="editor-toolbar__tools-group editor-toolbar__tools-group--right">
-        <ElTooltip content="基础信息" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          content="基础信息"
+          placement="bottom"
+        >
           <ElButton
             class="editor-toolbar__icon-btn"
             aria-label="基础信息"
@@ -101,7 +146,12 @@
           </ElButton>
         </ElTooltip>
 
-        <ElTooltip :content="jsonVisible ? '隐藏 JSON 定义' : '显示 JSON 定义'" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          :content="jsonVisible ? '隐藏 JSON 定义' : '显示 JSON 定义'"
+          placement="bottom"
+        >
           <ElButton
             :class="[
               'editor-toolbar__icon-btn',
@@ -114,7 +164,12 @@
           </ElButton>
         </ElTooltip>
 
-        <ElTooltip content="校验" placement="bottom">
+        <ElTooltip
+          :enterable="false"
+          popper-class="workflow-toolbar-tooltip"
+          content="校验"
+          placement="bottom"
+        >
           <ElButton
             class="editor-toolbar__icon-btn"
             :loading="validating"
@@ -218,6 +273,9 @@
 </script>
 
 <style scoped lang="scss">
+  :global(.workflow-toolbar-tooltip) {
+    pointer-events: none;
+  }
   .editor-toolbar {
     display: grid;
     flex: 0 0 auto;

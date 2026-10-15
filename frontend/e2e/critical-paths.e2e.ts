@@ -1004,9 +1004,7 @@ test('插件缺少前端贡献时给出可见反馈', async ({ page }) => {
     missingComponent: true
   })
   await page.goto('/plugins/test.uncompiled/result/paper')
-  await expect(page.locator('.plugin-result-page .el-alert')).toContainText(
-    '插件 test.uncompiled 的前端组件未编译'
-  )
+  await expect(page.getByRole('alert')).toContainText('插件 test.uncompiled 的前端组件未编译')
   expect(backend.unexpected).toEqual([])
 })
 
