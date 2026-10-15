@@ -28,30 +28,30 @@ const maxWorkflowSecretBytes = 64 << 10
 
 func validateWorkflowSecretChanges(graph validatedWorkflowGraph, changes []WorkflowSecretChange) (map[workflowSecretKey]WorkflowSecretChange, error) {
 	if len(changes) > 256 {
-		return nil, errors.New("secretChanges must not exceed 256 items")
+		return nil, errors.New("凭据修改不能超过 256 项")
 	}
 	result := make(map[workflowSecretKey]WorkflowSecretChange, len(changes))
 	for _, change := range changes {
 		key := workflowSecretKey{strings.TrimSpace(change.NodeInstanceID), strings.TrimSpace(change.Field)}
 		if !workflowNodeIDPattern.MatchString(key.nodeInstanceID) || key.field == "" || len(key.field) > 128 {
-			return nil, errors.New("secret change requires a valid nodeInstanceId and field")
+			return nil, errors.New("凭据修改须包含有效的节点编号和字段")
 		}
 		desc, ok := graph.descriptors[key.nodeInstanceID]
 		if !ok {
-			return nil, fmt.Errorf("secret change references unknown node %q", key.nodeInstanceID)
+			return nil, fmt.Errorf("凭据修改引用了不存在的节点 %q", key.nodeInstanceID)
 		}
 		fields, _ := workflowSecretFields(desc.ConfigSchema)
 		if _, ok := fields[key.field]; !ok {
-			return nil, fmt.Errorf("node %q does not declare secret field %q", key.nodeInstanceID, key.field)
+			return nil, fmt.Errorf("节点 %q 未声明凭据字段 %q", key.nodeInstanceID, key.field)
 		}
 		if _, duplicate := result[key]; duplicate {
-			return nil, fmt.Errorf("duplicate secret change for node %q field %q", key.nodeInstanceID, key.field)
+			return nil, fmt.Errorf("节点 %q 的凭据字段 %q 重复修改", key.nodeInstanceID, key.field)
 		}
 		if change.Remove == (change.Value != nil) {
-			return nil, fmt.Errorf("secret change for node %q field %q must set value or remove", key.nodeInstanceID, key.field)
+			return nil, fmt.Errorf("节点 %q 的凭据字段 %q 须选择设置值或移除", key.nodeInstanceID, key.field)
 		}
 		if change.Value != nil && (strings.TrimSpace(*change.Value) == "" || len(*change.Value) > maxWorkflowSecretBytes) {
-			return nil, fmt.Errorf("secret change for node %q field %q must contain 1 to %d bytes", key.nodeInstanceID, key.field, maxWorkflowSecretBytes)
+			return nil, fmt.Errorf("节点 %q 的凭据字段 %q 须为 1 至 %d 字节", key.nodeInstanceID, key.field, maxWorkflowSecretBytes)
 		}
 		result[key] = change
 	}
@@ -61,7 +61,7 @@ func validateWorkflowSecretChanges(graph validatedWorkflowGraph, changes []Workf
 func (a *App) persistWorkflowSecrets(tx *gorm.DB, workflowID, previousRevisionID int64, revision db.WorkflowRevision, previousGraph, graph validatedWorkflowGraph, changes map[workflowSecretKey]WorkflowSecretChange, now time.Time) error {
 	var previous []db.WorkflowSecretBinding
 	if err := tx.Where("workflow_id = ? AND revision_id = ?", workflowID, previousRevisionID).Find(&previous).Error; err != nil {
-		return errors.New("load active workflow secret bindings failed")
+		return errors.New("读取当前工作流凭据绑定失败")
 	}
 	values := make(map[workflowSecretKey]string, len(previous)+len(changes))
 	for _, binding := range previous {
@@ -80,11 +80,11 @@ func (a *App) persistWorkflowSecrets(tx *gorm.DB, workflowID, previousRevisionID
 			continue
 		}
 		if a.Cipher == nil {
-			return errors.New("workflow secret cipher is unavailable")
+			return errors.New("工作流凭据加密服务不可用")
 		}
 		values[key] = a.Cipher.Encrypt(*change.Value)
 		if values[key] == "" {
-			return errors.New("encrypt workflow secret failed")
+			return errors.New("加密工作流凭据失败")
 		}
 	}
 
@@ -104,7 +104,7 @@ func (a *App) persistWorkflowSecrets(tx *gorm.DB, workflowID, previousRevisionID
 			FieldName: key.field, EncryptedValue: values[key], CreatedAt: now,
 		}
 		if err := tx.Create(&binding).Error; err != nil {
-			return errors.New("create workflow secret binding failed")
+			return errors.New("创建工作流凭据绑定失败")
 		}
 	}
 	return nil
@@ -116,7 +116,7 @@ func ensureWorkflowRevisionSecrets(tx *gorm.DB, workflowID, revisionID int64, gr
 	}
 	var bindings []db.WorkflowSecretBinding
 	if err := tx.Where("workflow_id = ? AND revision_id = ?", workflowID, revisionID).Find(&bindings).Error; err != nil {
-		return errors.New("load workflow secret bindings failed")
+		return errors.New("读取工作流凭据绑定失败")
 	}
 	configured := make(map[workflowSecretKey]bool, len(bindings))
 	for _, binding := range bindings {
@@ -124,7 +124,7 @@ func ensureWorkflowRevisionSecrets(tx *gorm.DB, workflowID, revisionID int64, gr
 	}
 	for key := range graph.requiredSecrets {
 		if !configured[key] {
-			return fmt.Errorf("%w: node %q requires secret field %q", ErrConflict, key.nodeInstanceID, key.field)
+			return fmt.Errorf("%w：节点 %q 缺少凭据字段 %q", ErrConflict, key.nodeInstanceID, key.field)
 		}
 	}
 	return nil
@@ -141,7 +141,7 @@ func (a *App) workflowRevisionSecretFields(ctx context.Context, workflowID int64
 	var bindings []db.WorkflowSecretBinding
 	if err := a.DB.WithContext(ctx).Where("workflow_id = ? AND revision_id IN ?", workflowID, revisionIDs).
 		Order("revision_id, node_instance_id, field_name").Find(&bindings).Error; err != nil {
-		return nil, errors.New("load workflow secret binding status failed")
+		return nil, errors.New("读取工作流凭据配置状态失败")
 	}
 	for _, binding := range bindings {
 		if result[binding.RevisionID][binding.NodeInstanceID] == nil {

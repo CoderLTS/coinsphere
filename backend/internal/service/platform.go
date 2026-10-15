@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (a *App) PluginCatalog(ctx context.Context) []M {
@@ -17,7 +18,7 @@ func (a *App) PluginCatalog(ctx context.Context) []M {
 	for _, plugin := range a.Plugins.Plugins() {
 		pages := []M{}
 		for _, page := range a.Plugins.PluginResultPages(plugin.ID) {
-			pages = append(pages, M{"pageKey": page.PageKey, "title": page.Title, "componentEntry": page.ComponentEntry, "configComponentEntry": page.ConfigComponentEntry, "scopeSchema": page.ScopeSchema, "filterSchema": page.FilterSchema, "actions": page.Actions})
+			pages = append(pages, M{"pageKey": page.PageKey, "title": page.Title, "componentEntry": page.ComponentEntry, "scopeSchema": page.ScopeSchema, "filterSchema": page.FilterSchema, "actions": page.Actions})
 		}
 		panels := []M{}
 		for _, panel := range a.Plugins.RunPanels(plugin.ID) {
@@ -46,7 +47,7 @@ func (a *App) PageWorkflows(ctx context.Context, page CursorPage, status, keywor
 	query := workflowScopeQuery(a.DB.WithContext(ctx).Model(&db.Workflow{}), ContextPrincipal(ctx))
 	if status != "" {
 		if !validWorkflowStatus(status) {
-			return nil, errors.New("invalid workflow status")
+			return nil, errors.New("工作流状态无效")
 		}
 		query = query.Where("workflows.status=?", status)
 	}
@@ -73,12 +74,15 @@ func (a *App) PageWorkflows(ctx context.Context, page CursorPage, status, keywor
 	}
 	var rows []struct {
 		db.Workflow
-		MaxConcurrentRuns int
-		BacklogLimit      int
-		LatestRunID       *int64
-		LatestRunStatus   *string
+		MaxConcurrentRuns       int
+		BacklogLimit            int
+		LatestRunID             *int64
+		LatestRunTriggeredAt    *time.Time
+		DraftRevisionNumber     *int
+		PublishedRevisionNumber *int
+		LatestRunStatus         *string
 	}
-	err = query.Select("workflows.*, rt.max_concurrent_runs, rt.backlog_limit, recent.id AS latest_run_id, recent.status AS latest_run_status").Joins("JOIN workflow_runtimes rt ON rt.workflow_id=workflows.id").Joins("LEFT JOIN LATERAL (SELECT id,status FROM workflow_runs r WHERE r.workflow_id=workflows.id ORDER BY id DESC LIMIT 1) recent ON TRUE").Order("workflows.id DESC").Limit(page.Limit + 1).Scan(&rows).Error
+	err = query.Select("workflows.*, rt.max_concurrent_runs, rt.backlog_limit, recent.id AS latest_run_id, recent.status AS latest_run_status, recent.triggered_at AS latest_run_triggered_at, draft.revision_number AS draft_revision_number, published.revision_number AS published_revision_number").Joins("JOIN workflow_runtimes rt ON rt.workflow_id=workflows.id").Joins("LEFT JOIN LATERAL (SELECT id,status,triggered_at FROM workflow_runs r WHERE r.workflow_id=workflows.id ORDER BY id DESC LIMIT 1) recent ON TRUE").Joins("LEFT JOIN workflow_revisions draft ON draft.id=workflows.draft_revision_id").Joins("LEFT JOIN workflow_revisions published ON published.id=workflows.published_revision_id").Order("workflows.id DESC").Limit(page.Limit + 1).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +97,7 @@ func (a *App) PageWorkflows(ctx context.Context, page CursorPage, status, keywor
 		_ = json.Unmarshal(raw, &item)
 		item["maxConcurrentRuns"], item["backlogLimit"] = r.MaxConcurrentRuns, r.BacklogLimit
 		item["latestRunId"], item["latestRunStatus"] = r.LatestRunID, r.LatestRunStatus
+		item["draftRevisionNumber"], item["publishedRevisionNumber"], item["latestRunTriggeredAt"] = r.DraftRevisionNumber, r.PublishedRevisionNumber, r.LatestRunTriggeredAt
 		items = append(items, item)
 	}
 	key := ""

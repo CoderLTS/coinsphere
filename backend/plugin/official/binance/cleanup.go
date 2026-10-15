@@ -20,7 +20,7 @@ func cleanupWorkflow(ctx context.Context, tx *gorm.DB, request sdk.CleanupReques
 			return err
 		}
 		if facts > 0 {
-			return errors.New("Binance workflow has financial facts; reconcile and archive its account before deletion")
+			return errors.New("币安工作流已有金融记录，请先核对并归档账户再删除")
 		}
 		statements = []string{`DELETE FROM plugin_binance.fees WHERE fill_id IN (SELECT fill.id FROM plugin_binance.fills fill JOIN plugin_binance.orders order_row ON order_row.id = fill.order_id WHERE order_row.workflow_id = ?)`, `DELETE FROM plugin_binance.fills WHERE order_id IN (SELECT id FROM plugin_binance.orders WHERE workflow_id = ?)`, `DELETE FROM plugin_binance.orders WHERE workflow_id = ?`}
 	}

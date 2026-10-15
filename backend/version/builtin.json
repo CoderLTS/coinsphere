@@ -2,7 +2,7 @@
   {
     "id": "official.ai",
     "name": "人工智能",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "runPanels",
@@ -20,7 +20,7 @@
   {
     "id": "official.connector",
     "name": "连接器",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "triggers",
@@ -32,7 +32,7 @@
   {
     "id": "official.notification",
     "name": "通知",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "cleanup",
@@ -43,19 +43,19 @@
   {
     "id": "official.qq",
     "name": "QQ机器人",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "triggers"
     ],
     "requiresPlugins": {
-      "official.notification": "^5.0.0"
+      "official.notification": "^1.0.0"
     }
   },
   {
     "id": "official.quant",
     "name": "量化",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "apiRoutes",
@@ -71,7 +71,7 @@
   {
     "id": "official.binance",
     "name": "Binance",
-    "version": "5.0.0",
+    "version": "1.0.0",
     "contributes": [
       "nodes",
       "triggers",

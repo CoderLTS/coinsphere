@@ -5,6 +5,7 @@ import "coinsphere/backend/plugin/sdk"
 func quantNodeMeta(desc sdk.NodeDescriptor, title, description, category, color, icon string) sdk.NodeDescriptor {
 	desc.EditorKey = desc.Type
 	desc.Title, desc.Description, desc.Category, desc.Color, desc.Icon = title, description, category, color, icon
+	desc.CategoryTitle = map[string]string{"start": "触发入口", "market": "行情", "strategy": "策略", "data": "数据", "integration": "集成"}[category]
 	desc.Aliases = append([]string{title}, quantNodeAliases[desc.Type]...)
 	desc.Tags = append([]string{category}, quantNodeTags[desc.Type]...)
 	desc.SortOrder = quantNodeOrder[desc.Type]

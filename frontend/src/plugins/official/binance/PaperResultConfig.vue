@@ -4,8 +4,8 @@
       :model-value="scope.workflowId"
       filterable
       clearable
-      placeholder="全部工作流"
       remote
+      placeholder="全部工作流"
       :remote-method="search"
       @update:model-value="selectWorkflow"
       ><ElOption
@@ -14,59 +14,56 @@
         :label="workflow.name"
         :value="workflow.id" /></ElSelect
   ></ElFormItem>
-  <ElFormItem label="Paper 节点"
-    ><ElSelect
+  <ElFormItem label="模拟交易节点"
+    ><ElInput
       :model-value="scope.paperNodeInstanceId"
       clearable
-      placeholder="全部 Paper 节点"
+      placeholder="全部节点（含历史版本）"
       :disabled="!scope.workflowId"
-      @update:model-value="selectNode($event)"
-      ><ElOption v-for="id in nodeIDs" :key="id" :label="id" :value="id" /></ElSelect
-  ></ElFormItem>
+      @update:model-value="selectNode"
+  /></ElFormItem>
   <WorkflowSchemaFields :schema="filterSchema" :config="filters" @update="setFilter" />
+  <ElText v-if="error" type="danger">{{ error }}</ElText>
 </template>
 <script setup lang="ts">
-  import { fetchWorkflows, fetchWorkflowRevision, type WorkflowSummary } from '@/api/workflows'
-  import WorkflowSchemaFields from '@/components/workflow/WorkflowSchemaFields.vue'
+  import { fetchWorkflows, fetchWorkflow, type WorkflowItem } from '@/api/workflows'
+  import { WorkflowSchemaFields } from '@/plugins/ui'
   const props = defineProps<{
     scope: Record<string, any>
     filters: Record<string, any>
     filterSchema: Record<string, any>
   }>()
   const emit = defineEmits<{
-    (event: 'update:scope', scope: Record<string, unknown>): void
-    (event: 'update:filters', filters: Record<string, unknown>): void
+    (event: 'update:scope', value: Record<string, unknown>): void
+    (event: 'update:filters', value: Record<string, unknown>): void
   }>()
-  const workflows = ref<WorkflowSummary[]>([]),
-    nodeIDs = ref<string[]>([])
+  const workflows = ref<WorkflowItem[]>([]),
+    error = ref('')
+  let request = 0
   const search = async (keyword = '') => {
-    workflows.value = (await fetchWorkflows({ keyword, limit: 20 })).records
-  }
-  const selectNode = (id: string) => {
-    const next = { ...props.scope }
-    if (id) next.paperNodeInstanceId = id
-    else delete next.paperNodeInstanceId
-    emit('update:scope', next)
-  }
-  const selectWorkflow = async (id: number) => {
-    nodeIDs.value = []
-    if (!id) {
-      emit('update:scope', {})
-      return
+    const current = ++request
+    try {
+      const result = await fetchWorkflows({ keyword, limit: 50 })
+      if (current !== request) return
+      workflows.value = result.records
+      if (
+        props.scope.workflowId &&
+        !workflows.value.some((item) => item.id === props.scope.workflowId)
+      )
+        workflows.value.unshift(await fetchWorkflow(props.scope.workflowId))
+      error.value = ''
+    } catch (cause: any) {
+      if (current === request) error.value = cause.message
     }
-    const workflow = workflows.value.find((item) => item.id === id)
-    if (!workflow) return
-    const revision = await fetchWorkflowRevision(id, workflow.draftRevisionId)
-    nodeIDs.value = revision.graph.nodes
-      .filter((node) => node.nodeType === 'official.binance.paper_execute')
-      .map((node) => node.nodeInstanceId)
-    emit('update:scope', { workflowId: id })
   }
-  const setFilter = (key: string, value: unknown) => {
-    const next = { ...props.filters }
-    if (value === '' || value === undefined) delete next[key]
-    else next[key] = value
-    emit('update:filters', next)
-  }
-  onMounted(() => search())
+  const selectWorkflow = (id: number) => emit('update:scope', id ? { workflowId: id } : {})
+  const selectNode = (id: string) =>
+    emit('update:scope', { ...props.scope, paperNodeInstanceId: id })
+  const setFilter = (key: string, value: unknown) =>
+    emit('update:filters', { ...props.filters, [key]: value })
+  watch(
+    () => props.scope.workflowId,
+    () => search(),
+    { immediate: true }
+  )
 </script>

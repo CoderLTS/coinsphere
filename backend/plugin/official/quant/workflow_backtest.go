@@ -60,7 +60,7 @@ func (a quantWorkflowBacktestAction) Execute(ctx context.Context, request sdk.Ac
 		StartTime, EndTime, InitialCapital, FeeRate, SlippageRate string
 	}
 	if !decodeQuantStrict(request.Input, &input) {
-		return sdk.ActionResult{}, errors.New("Quant workflow backtest input is invalid")
+		return sdk.ActionResult{}, errors.New("量化工作流回测输入无效")
 	}
 	start, startErr := parseQuantUTCTime(input.StartTime)
 	end, endErr := parseQuantUTCTime(input.EndTime)
@@ -70,7 +70,7 @@ func (a quantWorkflowBacktestAction) Execute(ctx context.Context, request sdk.Ac
 	if startErr != nil || endErr != nil || !start.Before(end) || capitalErr != nil || capital.Sign() <= 0 ||
 		feeErr != nil || feeRate.Sign() < 0 || feeRate.GreaterThan(quantOne) ||
 		slippageErr != nil || slippageRate.Sign() < 0 || slippageRate.GreaterThan(quantOne) {
-		return sdk.ActionResult{}, errors.New("Quant workflow backtest parameters are invalid")
+		return sdk.ActionResult{}, errors.New("量化工作流回测参数无效")
 	}
 	if existing, ok, err := a.runtime.loadQuantBacktestByOperation(ctx, request.OperationKey); err != nil {
 		return sdk.ActionResult{}, err
@@ -82,10 +82,10 @@ func (a quantWorkflowBacktestAction) Execute(ctx context.Context, request sdk.Ac
 		return sdk.ActionResult{}, err
 	}
 	if len(candles) > 1_000_000 {
-		return sdk.ActionResult{}, errors.New("Quant workflow backtest exceeds the 1,000,000 candle limit")
+		return sdk.ActionResult{}, errors.New("量化工作流回测超过 100 万根 K 线限制")
 	}
 	if len(candles) < 2 {
-		return sdk.ActionResult{}, errors.New("Quant workflow backtest requires at least two candles")
+		return sdk.ActionResult{}, errors.New("量化工作流回测至少需要两根 K 线")
 	}
 	cacheKey := quantCandleSeriesKey(series)
 	cache := &quantBacktestCandleCache{
@@ -107,12 +107,12 @@ func (a quantWorkflowBacktestAction) Execute(ctx context.Context, request sdk.Ac
 		"parameters": input, "candles": detailCandles, "points": simulation.Points,
 	})
 	if err != nil {
-		return sdk.ActionResult{}, errors.New("encode Quant workflow backtest detail failed")
+		return sdk.ActionResult{}, errors.New("编码量化工作流回测详情失败")
 	}
 	workflowID, workflowErr := quantInt64(request.Revision.WorkflowID)
 	revisionID, revisionErr := quantInt64(request.Revision.RevisionID)
 	if workflowErr != nil || revisionErr != nil {
-		return sdk.ActionResult{}, errors.New("Quant workflow backtest identity is invalid")
+		return sdk.ActionResult{}, errors.New("量化工作流回测标识无效")
 	}
 	parameters, _ := json.Marshal(input)
 	manifest, _ := json.Marshal(map[string]any{
@@ -131,11 +131,11 @@ func (a quantWorkflowBacktestAction) Execute(ctx context.Context, request sdk.Ac
 		Detail: string(detail), CreatedAt: time.Now().UTC(),
 	}
 	if err := a.runtime.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
-		return sdk.ActionResult{}, errors.New("persist Quant workflow backtest summary failed")
+		return sdk.ActionResult{}, errors.New("保存量化工作流回测摘要失败")
 	}
 	stored, ok, err := a.runtime.loadQuantBacktestByOperation(ctx, request.OperationKey)
 	if err != nil || !ok {
-		return sdk.ActionResult{}, errors.New("load persisted Quant workflow backtest failed")
+		return sdk.ActionResult{}, errors.New("读取已保存的量化工作流回测失败")
 	}
 	return quantWorkflowBacktestResult(stored), nil
 }
@@ -150,7 +150,7 @@ func (c *quantBacktestCandleCache) candlesThroughClose(ctx context.Context, runt
 	if c.lookbacks[key] < limit {
 		available := 1_000_000 - (c.total - len(candles))
 		if available < 1 {
-			return nil, errors.New("Quant workflow backtest exceeds the 1,000,000 candle limit")
+			return nil, errors.New("量化工作流回测超过 100 万根 K 线限制")
 		}
 		duration := quantIntervals[config.Interval]
 		lowerBound := c.start.Add(-duration * time.Duration(limit+2))
@@ -159,7 +159,7 @@ func (c *quantBacktestCandleCache) candlesThroughClose(ctx context.Context, runt
 			return nil, err
 		}
 		if len(loaded) > available {
-			return nil, errors.New("Quant workflow backtest exceeds the 1,000,000 candle limit")
+			return nil, errors.New("量化工作流回测超过 100 万根 K 线限制")
 		}
 		c.total += len(loaded) - len(candles)
 		c.series[key] = loaded
@@ -202,11 +202,11 @@ func executeQuantWorkflowBacktest(ctx context.Context, frames quantFrameExecutor
 				TargetPosition, Action string
 			}
 			if json.Unmarshal(raw, &signal) != nil {
-				return quantWorkflowBacktestSimulation{}, errors.New("decode Quant workflow backtest signal failed")
+				return quantWorkflowBacktestSimulation{}, errors.New("解析量化工作流回测信号失败")
 			}
 			candidate, err := decimal.NewFromString(signal.TargetPosition)
 			if err != nil || !nextTarget.Equal(target) && !nextTarget.Equal(candidate) {
-				return quantWorkflowBacktestSimulation{}, fmt.Errorf("Quant workflow signal conflict at %s", current.CloseTime.UTC().Format(time.RFC3339Nano))
+				return quantWorkflowBacktestSimulation{}, fmt.Errorf("量化工作流信号在 %s 发生冲突", current.CloseTime.UTC().Format(time.RFC3339Nano))
 			}
 			nextTarget, action = candidate, signal.Action
 		}
@@ -229,7 +229,7 @@ func executeQuantWorkflowBacktest(ctx context.Context, frames quantFrameExecutor
 		}
 		equity := cash.Add(quantity.Mul(next.Close))
 		if equity.Sign() < 0 {
-			return quantWorkflowBacktestSimulation{}, errors.New("Quant workflow backtest equity was depleted")
+			return quantWorkflowBacktestSimulation{}, errors.New("量化工作流回测权益已耗尽")
 		}
 		if equity.GreaterThan(peak) {
 			peak = equity

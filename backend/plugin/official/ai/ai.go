@@ -22,16 +22,16 @@ var emptyObjectSchema = json.RawMessage(`{"$schema":"https://json-schema.org/dra
 
 func Register(registrar sdk.Registrar, host sdk.Host) error {
 	if host.Store == nil || host.Credentials == nil || host.Platform == nil || host.Sessions == nil {
-		return errors.New("AI host services are unavailable")
+		return errors.New("AI 宿主服务不可用")
 	}
 	runtime := &runtime{DB: host.Store.DB(), host: host}
 	if err := registrar.Action(sdk.NodeDescriptor{
 		EditorKey: "model", Type: "official.ai.model_call", Version: "1.0.0", Kind: sdk.NodeKindAction,
-		Title: "AI 模型调用", Description: "调用已配置的 AI 模型", Category: "agent", Aliases: []string{"AI", "大模型", "模型调用"}, Tags: []string{"智能体", "推理", "模型"}, SortOrder: 10, Color: "#0ea5e9", Icon: "bot", Width: 220, Height: 72,
+		Title: "AI 模型调用", Description: "调用已配置的 AI 模型", Category: "agent", CategoryTitle: "人工智能", Aliases: []string{"AI", "大模型", "模型调用"}, Tags: []string{"智能体", "推理", "模型"}, SortOrder: 10, Color: "#0ea5e9", Icon: "bot", Width: 220, Height: 72,
 		ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"modelId":{"type":"integer","title":"模型","minimum":1,"x-coinsphere-ai-model":true}},"required":["modelId"],"additionalProperties":false}`),
 		UISchema:     json.RawMessage(`{"ui:order":["modelId"]}`),
 		InputSchema:  json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"prompt":{"type":"string","title":"提示内容","minLength":1,"maxLength":32768,"x-coinsphere-field-source":true},"data":{"type":"object","title":"结构化数据","x-coinsphere-field-source":true}},"required":["prompt","data"],"additionalProperties":false}`),
-		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"model":{"type":"string"},"data":{"type":"object"},"usage":{"type":"object"}},"required":["model","data","usage"],"additionalProperties":false}`),
+		OutputSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"model":{"type":"string","title":"模型"},"data":{"type":"object","title":"数据"},"usage":{"type":"object","title":"用量"}},"required":["model","data","usage"],"additionalProperties":false}`),
 		Pool:         sdk.PoolStream, SideEffect: sdk.SideEffectExternal, State: sdk.StateStateless,
 	}, aiModelCallAction{runtime: runtime}); err != nil {
 		return err
@@ -60,7 +60,7 @@ func (a aiModelCallAction) Execute(ctx context.Context, request sdk.ActionReques
 	}
 	if json.Unmarshal(request.Config, &config) != nil || json.Unmarshal(request.Input, &input) != nil ||
 		strings.TrimSpace(input.Prompt) == "" || input.Data == nil {
-		return sdk.ActionResult{}, errors.New("AI model call configuration or input is invalid")
+		return sdk.ActionResult{}, errors.New("AI 模型调用配置或输入无效")
 	}
 	model, err := a.runtime.loadAssistantModel(ctx, config.ModelID, true)
 	if err != nil {
@@ -68,7 +68,7 @@ func (a aiModelCallAction) Execute(ctx context.Context, request sdk.ActionReques
 	}
 	content, err := json.Marshal(map[string]any{"prompt": input.Prompt, "data": input.Data})
 	if err != nil || len(content) > maxAIResponseBytes {
-		return sdk.ActionResult{}, errors.New("AI model input exceeds the 1 MiB limit")
+		return sdk.ActionResult{}, errors.New("AI 模型输入不能超过 1 MiB")
 	}
 	payload, err := json.Marshal(map[string]any{
 		"model":           model.ModelName,
@@ -76,13 +76,13 @@ func (a aiModelCallAction) Execute(ctx context.Context, request sdk.ActionReques
 		"response_format": map[string]string{"type": "json_object"},
 	})
 	if err != nil {
-		return sdk.ActionResult{}, errors.New("encode AI model request failed")
+		return sdk.ActionResult{}, errors.New("编码 AI 模型请求失败")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, model.Timeout)
 	defer cancel()
 	httpRequest, err := http.NewRequestWithContext(callCtx, http.MethodPost, model.endpoint("chat/completions"), bytes.NewReader(payload))
 	if err != nil {
-		return sdk.ActionResult{}, errors.New("create AI model request failed")
+		return sdk.ActionResult{}, errors.New("创建 AI 模型请求失败")
 	}
 	model.authorize(httpRequest)
 	httpRequest.Header.Set("Content-Type", "application/json")
@@ -91,15 +91,15 @@ func (a aiModelCallAction) Execute(ctx context.Context, request sdk.ActionReques
 	httpRequest.Header.Set("Idempotency-Key", request.OperationKey)
 	response, err := model.client(model.Timeout).Do(httpRequest)
 	if err != nil {
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI request result is unknown")}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI 请求结果未知，须先核对结果")}
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, maxAIResponseBytes+1))
 	if err != nil || len(raw) > maxAIResponseBytes {
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI model response exceeds the 1 MiB limit")}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI 模型响应不能超过 1 MiB")}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: fmt.Errorf("AI model response status %d", response.StatusCode)}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: fmt.Errorf("AI 模型响应状态码为 %d", response.StatusCode)}
 	}
 	var modelResponse struct {
 		Model   string `json:"model"`
@@ -111,11 +111,11 @@ func (a aiModelCallAction) Execute(ctx context.Context, request sdk.ActionReques
 		Usage map[string]any `json:"usage"`
 	}
 	if json.Unmarshal(raw, &modelResponse) != nil || len(modelResponse.Choices) != 1 || modelResponse.Usage == nil {
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI model response is invalid")}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI 模型响应无效")}
 	}
 	var data map[string]any
 	if json.Unmarshal([]byte(modelResponse.Choices[0].Message.Content), &data) != nil || data == nil {
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI model response content must be a JSON object")}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("AI 模型响应内容须为 JSON 对象")}
 	}
 	if modelResponse.Model == "" {
 		modelResponse.Model = model.ModelName

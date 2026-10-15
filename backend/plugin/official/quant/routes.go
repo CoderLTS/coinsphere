@@ -166,7 +166,7 @@ func quantQueryLimit(r *http.Request, fallback, maximum int) (int, error) {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 || value > maximum {
-		return 0, errors.New("limit is outside the allowed range")
+		return 0, errors.New("返回数量超出允许范围")
 	}
 	return value, nil
 }

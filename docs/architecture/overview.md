@@ -1,12 +1,12 @@
 # CoinSphere 当前架构
 
-CoinSphere 是个人工作流微内核，采用 Vue/ArtDesignPro、单实例 Go 模块化单体和 PostgreSQL 16。Core 5 / SDK 5 / Graph 3 的决策见 [ADR 0007](decisions/0007-personal-workflow-kernel.md)，接口语义见[公共契约](../contracts/README.md)。
+CoinSphere 是个人工作流微内核，采用 Vue/ArtDesignPro、单实例 Go 模块化单体和 PostgreSQL 16。Core 1.0.0 / SDK 1 / Graph 3 的决策见 [ADR 0007](decisions/0007-personal-workflow-kernel.md)，接口语义见[公共契约](../contracts/README.md)。
 
 ```mermaid
 flowchart TB
     Web[ArtDesignPro 导航与通用编辑器] --> Core[个人会话、菜单、插件生命周期、工作流编排]
     Core --> Runtime[定义、发布、调度、事件、Run、审批、日志、检查点、状态、制品]
-    Core --> SDK[SDK 5 贡献与 Host 通用服务]
+    Core --> SDK[SDK 1 贡献与 Host 通用服务]
     SDK --> Plugins[AI、Connector、Notification、QQ、Quant、Binance]
     Core --> Public[(PostgreSQL public)]
     Plugins --> Schemas[(插件专属 schema)]

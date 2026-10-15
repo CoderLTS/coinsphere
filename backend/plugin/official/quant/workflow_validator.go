@@ -37,7 +37,7 @@ type quantWorkflowBinding struct {
 func validateQuantWorkflow(input sdk.WorkflowValidationContext) error {
 	var graph quantWorkflowGraph
 	if json.Unmarshal(input.Graph, &graph) != nil {
-		return errors.New("Quant workflow graph is invalid")
+		return errors.New("量化工作流定义无效")
 	}
 	nodes := make(map[string]struct {
 		Type   string
@@ -74,11 +74,11 @@ func validateQuantWorkflow(input sdk.WorkflowValidationContext) error {
 			}
 			incoming++
 			if nodes[edge.Source].Type != "official.quant.position" {
-				return fmt.Errorf("Quant output signal %q only accepts position candidates", node.ID)
+				return fmt.Errorf("量化信号输出节点 %q 只接受仓位候选", node.ID)
 			}
 		}
 		if incoming == 0 {
-			return fmt.Errorf("Quant output signal %q requires a position candidate", node.ID)
+			return fmt.Errorf("量化信号输出节点 %q 缺少仓位候选", node.ID)
 		}
 	}
 	return nil
@@ -97,7 +97,7 @@ func validateQuantBindings(graph quantWorkflowGraph, nodes map[string]struct {
 				}
 			}
 			if len(incoming) != 1 || incoming[0].Port != "true" || !strings.HasPrefix(nodes[incoming[0].Source].Type, quantPluginID+".") {
-				return fmt.Errorf("node %q must connect to exactly one Quant condition true branch", node.ID)
+				return fmt.Errorf("节点 %q 须连接且仅连接一个量化条件的成立分支", node.ID)
 			}
 			if err := validateFieldBindings(node.ID, incoming[0].Source, node.InputBindings, map[string]string{
 				"venue": "venue", "market": "market", "instrument": "instrument", "interval": "interval",
@@ -114,7 +114,7 @@ func validateQuantBindings(graph quantWorkflowGraph, nodes map[string]struct {
 			binding, ok := node.InputBindings["target"]
 			if !ok || binding.Kind != "field" || len(binding.FieldPath) != 2 || binding.FieldPath[0] != "decimals" ||
 				binding.FieldPath[1] != config.DecimalField || nodes[binding.NodeInstanceID].Type != "official.quant.code_strategy" {
-				return fmt.Errorf("node %q input target must reference its configured code strategy Decimal output", node.ID)
+				return fmt.Errorf("节点 %q 的目标输入须引用所配置代码策略的 Decimal 输出", node.ID)
 			}
 		}
 		for field, binding := range node.InputBindings {
@@ -128,14 +128,14 @@ func validateQuantBindings(graph quantWorkflowGraph, nodes map[string]struct {
 				DecimalOutputs []string `json:"decimalOutputs"`
 			}
 			if json.Unmarshal(source.Config, &config) != nil {
-				return fmt.Errorf("node %q input binding %q references an invalid code strategy", node.ID, field)
+				return fmt.Errorf("节点 %q 的输入绑定 %q 引用了无效代码策略", node.ID, field)
 			}
 			declared := config.BooleanOutputs
 			if binding.FieldPath[0] == "decimals" {
 				declared = config.DecimalOutputs
 			}
 			if !containsQuantString(declared, binding.FieldPath[1]) {
-				return fmt.Errorf("node %q input binding %q references an undeclared code strategy output", node.ID, field)
+				return fmt.Errorf("节点 %q 的输入绑定 %q 引用了未声明的代码策略输出", node.ID, field)
 			}
 		}
 	}
@@ -146,7 +146,7 @@ func validateFieldBindings(nodeID, sourceID string, bindings map[string]quantWor
 	for targetField, sourceField := range expected {
 		binding, ok := bindings[targetField]
 		if !ok || binding.Kind != "field" || binding.NodeInstanceID != sourceID || len(binding.FieldPath) != 1 || binding.FieldPath[0] != sourceField {
-			return fmt.Errorf("node %q input binding %q must use its Quant condition source", nodeID, targetField)
+			return fmt.Errorf("节点 %q 的输入绑定 %q 须引用来源量化条件", nodeID, targetField)
 		}
 	}
 	return nil
@@ -162,7 +162,7 @@ func validateQuantSeriesIdentity(graph quantWorkflowGraph, nodes map[string]stru
 		}
 		var main struct{ Venue, Market, Instrument, Interval string }
 		if json.Unmarshal(driver.Config, &main) != nil {
-			return errors.New("Quant backtest series is invalid")
+			return errors.New("量化回测行情序列无效")
 		}
 		queue := []string{}
 		for _, edge := range graph.RawEdges {
@@ -183,7 +183,7 @@ func validateQuantSeriesIdentity(graph quantWorkflowGraph, nodes map[string]stru
 			if node.Type == "official.quant.output_signal" {
 				var output struct{ Venue, Market, Instrument, Interval string }
 				if json.Unmarshal(node.Config, &output) != nil || output != main {
-					return fmt.Errorf("node %q must use backtest driver %q series", id, driver.ID)
+					return fmt.Errorf("节点 %q 须使用回测驱动节点 %q 的行情序列", id, driver.ID)
 				}
 				outputs++
 				continue
@@ -195,7 +195,7 @@ func validateQuantSeriesIdentity(graph quantWorkflowGraph, nodes map[string]stru
 			}
 		}
 		if outputs == 0 {
-			return fmt.Errorf("backtest driver %q must reach an output signal through each", driver.ID)
+			return fmt.Errorf("回测驱动节点 %q 须通过逐项分支到达信号输出节点", driver.ID)
 		}
 	}
 
@@ -205,7 +205,7 @@ func validateQuantSeriesIdentity(graph quantWorkflowGraph, nodes map[string]stru
 		}
 		var output struct{ Venue, Market, Instrument, Interval string }
 		if json.Unmarshal(node.Config, &output) != nil {
-			return fmt.Errorf("node %q output signal identity is invalid", node.ID)
+			return fmt.Errorf("节点 %q 的信号输出标识无效", node.ID)
 		}
 
 		incoming := 0
@@ -215,11 +215,11 @@ func validateQuantSeriesIdentity(graph quantWorkflowGraph, nodes map[string]stru
 			}
 			incoming++
 			if nodes[edge.Source].Type != "official.quant.position" {
-				return fmt.Errorf("node %q only accepts Quant position candidates", node.ID)
+				return fmt.Errorf("节点 %q 只接受量化仓位候选", node.ID)
 			}
 		}
 		if incoming == 0 {
-			return fmt.Errorf("node %q requires a Quant position candidate", node.ID)
+			return fmt.Errorf("节点 %q 缺少量化仓位候选", node.ID)
 		}
 	}
 	return nil

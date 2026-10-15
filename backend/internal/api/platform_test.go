@@ -61,6 +61,21 @@ func TestHTTPResourceAuthorizationAndLongConnectionRevocation(t *testing.T) {
 	if response := request(http.MethodGet, path, ""); response.Code != http.StatusOK {
 		t.Fatal("owner cannot read resource", response.Code)
 	}
+	for _, endpoint := range []string{"/api/v1/workflow-runs", "/api/v1/human-tasks"} {
+		if response := request(http.MethodGet, endpoint, ""); response.Code != http.StatusOK {
+			t.Fatal("run center endpoint unavailable", endpoint, response.Code)
+		}
+		readerToken = ""
+		if response := request(http.MethodGet, endpoint, ""); response.Code != http.StatusUnauthorized {
+			t.Fatal("anonymous list accepted", endpoint, response.Code)
+		}
+		readerToken = ownerToken
+		for _, query := range []string{"?workflowId=-1", "?workflowId=7&workflowId=8", "?workflowId=&workflowId=7"} {
+			if response := request(http.MethodGet, endpoint+query, ""); response.Code != http.StatusBadRequest {
+				t.Fatal("invalid workflow filter accepted", endpoint+query, response.Code)
+			}
+		}
+	}
 	for _, removed := range []string{"/api/v1/workbench", "/api/v1/admin/users", "/api/v1/admin/roles", "/api/v1/admin/permissions", "/api/v1/system/users", "/api/v1/system/roles", "/api/v1/system/capabilities", "/api/v1/system/menu-buttons", "/api/v1/result-views/1/grants"} {
 		if response := request(http.MethodGet, removed, ""); response.Code != http.StatusNotFound {
 			t.Fatal("removed API remains", removed, response.Code)

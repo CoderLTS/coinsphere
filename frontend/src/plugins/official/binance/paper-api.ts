@@ -1,5 +1,8 @@
 import request from '@/utils/http'
-import type { PluginResultContext } from '@/plugins/sdk'
+export interface PaperResultQuery {
+  scope: Record<string, string | number>
+  filters: Record<string, string | number>
+}
 
 export type PaperOrderStatus =
   | 'new'
@@ -48,12 +51,12 @@ export interface PaperResult {
   accounts: PaperAccount[]
 }
 
-export const fetchDirectPaperResult = (context: PluginResultContext) =>
+export const fetchDirectPaperResult = (context: PaperResultQuery) =>
   request.get<PaperResult>({
     url: '/api/v1/plugins/official.binance/results/paper',
     params: { ...context.scope, ...context.filters }
   })
-export const exportDirectPaperResult = (context: PluginResultContext) =>
+export const exportDirectPaperResult = (context: PaperResultQuery) =>
   request.request<Blob>({
     url: '/api/v1/plugins/official.binance/results/paper/export',
     params: { ...context.scope, ...context.filters },

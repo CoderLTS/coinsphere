@@ -33,7 +33,9 @@
     <slot />
     <div class="meta-popover__footer">
       <ElButton @click="$emit('close')">取消</ElButton>
-      <ElButton type="primary" @click="$emit('submit', cloneModel(localModel))">应用</ElButton>
+      <ElButton type="primary" :disabled="readOnly" @click="$emit('submit', cloneModel(localModel))"
+        >应用</ElButton
+      >
     </div>
   </div>
 </template>

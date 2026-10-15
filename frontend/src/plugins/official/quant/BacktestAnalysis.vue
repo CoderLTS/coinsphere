@@ -18,7 +18,7 @@
           <div>
             <h1>{{ workflowName }}</h1>
             <p
-              >{{ backtest ? '回测 #' + backtest.id : 'Run #' + run?.id }} ·
+              >{{ backtest ? '回测 #' + backtest.id : '运行 #' + run?.id }} ·
               {{ detail.instrument }} · {{ detail.interval }}</p
             >
           </div>
@@ -32,7 +32,7 @@
       </header>
 
       <div class="analysis-range">
-        <span>{{ detail.market === 'usdm' ? 'USD-M' : 'Spot' }}</span>
+        <span>{{ detail.market === 'usdm' ? 'U 本位合约' : '现货' }}</span>
         <span>{{ formatDateTime(rangeStart) }} 至 {{ formatDateTime(rangeEnd) }}</span>
         <span>完成于 {{ formatDateTime(backtest?.createdAt || run?.completedAt) }}</span>
       </div>
@@ -187,7 +187,7 @@
 <script setup lang="ts">
   const { result, backtest, context } = defineProps<{
     backtest?: import('./api').QuantBacktest
-    context?: import('@/plugins/sdk').PluginResultContext
+    context?: import('./api').QuantResultQuery
     result?: {
       run: import('@/api/workflows').WorkflowRunDetail
       runNode: import('@/api/workflows').WorkflowRunNode

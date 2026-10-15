@@ -8,8 +8,8 @@ import (
 	"gorm.io/gorm"
 )
 
-var quantResultScopeSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"workflowId":{"type":"integer","minimum":1},"nodeInstanceId":{"type":"string","minLength":1,"maxLength":128}},"dependentRequired":{"nodeInstanceId":["workflowId"]},"additionalProperties":false}`)
-var quantResultFilterSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"venue":{"type":"string","title":"交易所","pattern":"^[a-z][a-z0-9_-]{1,31}$"},"market":{"type":"string","title":"市场","enum":["spot","usdm"]},"instrument":{"type":"string","title":"交易对","pattern":"^[A-Z0-9]{2,32}$"},"limit":{"type":"integer","title":"条数","minimum":1,"maximum":200}},"additionalProperties":false}`)
+var quantResultScopeSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"workflowId":{"type":"integer","minimum":1,"title":"工作流编号"},"nodeInstanceId":{"type":"string","minLength":1,"maxLength":128,"title":"节点标识"}},"dependentRequired":{"nodeInstanceId":["workflowId"]},"additionalProperties":false}`)
+var quantResultFilterSchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"venue":{"type":"string","title":"交易所","pattern":"^[a-z][a-z0-9_-]{1,31}$"},"market":{"type":"string","title":"市场","enum":["spot","usdm"],"enumLabels":["现货","U 本位合约"]},"instrument":{"type":"string","title":"交易对","pattern":"^[A-Z0-9]{2,32}$"},"limit":{"type":"integer","title":"条数","minimum":1,"maximum":200}},"additionalProperties":false}`)
 
 type quantResultScope struct {
 	WorkflowID     int64  `json:"workflowId"`
@@ -19,7 +19,7 @@ type quantResultScope struct {
 func quantResultResources(raw json.RawMessage) ([]sdk.WorkflowResource, error) {
 	var scope quantResultScope
 	if json.Unmarshal(raw, &scope) != nil || scope.WorkflowID < 0 || scope.NodeInstanceID != "" && scope.WorkflowID == 0 {
-		return nil, errors.New("invalid Quant result scope")
+		return nil, errors.New("量化结果范围无效")
 	}
 	if scope.WorkflowID == 0 {
 		return []sdk.WorkflowResource{}, nil
@@ -29,7 +29,7 @@ func quantResultResources(raw json.RawMessage) ([]sdk.WorkflowResource, error) {
 func validateQuantResultScope(ctx context.Context, tx *gorm.DB, raw json.RawMessage) error {
 	var scope quantResultScope
 	if json.Unmarshal(raw, &scope) != nil {
-		return errors.New("invalid Quant scope")
+		return errors.New("量化查询范围无效")
 	}
 	if scope.WorkflowID == 0 {
 		return nil
@@ -46,7 +46,7 @@ func validateQuantResultScope(ctx context.Context, tx *gorm.DB, raw json.RawMess
 			}
 		}
 		if json.Unmarshal([]byte(row.GraphJSON), &g) != nil {
-			return errors.New("invalid Quant workflow graph")
+			return errors.New("量化工作流定义无效")
 		}
 		for _, node := range g.Nodes {
 			if (scope.NodeInstanceID == "" || scope.NodeInstanceID == node.ID) && (node.Type == "official.quant.backtest" || node.Type == "official.quant.backtest_start") {
@@ -54,7 +54,7 @@ func validateQuantResultScope(ctx context.Context, tx *gorm.DB, raw json.RawMess
 			}
 		}
 	}
-	return errors.New("scope must reference a Quant backtest node")
+	return errors.New("查询范围须引用量化回测节点")
 }
 func validQuantBacktestScope(scope sdk.RouteScope) bool {
 	if validQuantSystemScope(scope) {

@@ -112,17 +112,17 @@ func parseBinanceSeriesConfig(raw json.RawMessage) (binanceSeriesConfig, error) 
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&config) != nil {
-		return config, errors.New("Binance series configuration is invalid")
+		return config, errors.New("币安行情序列配置无效")
 	}
 	config.Market = strings.ToLower(strings.TrimSpace(config.Market))
 	config.Instrument = strings.ToUpper(strings.TrimSpace(config.Instrument))
 	config.Interval = strings.TrimSpace(config.Interval)
 	if config.Market != "spot" && config.Market != "usdm" || !instrumentPattern.MatchString(config.Instrument) || config.ProxyID < 0 {
-		return config, errors.New("Binance market or instrument is invalid")
+		return config, errors.New("币安市场或交易品种无效")
 	}
 	if config.Interval != "" {
 		if _, ok := binanceIntervals[config.Interval]; !ok {
-			return config, errors.New("Binance interval is unsupported")
+			return config, errors.New("不支持此币安周期")
 		}
 	}
 	return config, nil
@@ -133,7 +133,7 @@ func parseBinanceCandleStreamConfig(raw json.RawMessage) (binanceCandleStreamCon
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&config) != nil {
-		return config, errors.New("Binance candle stream configuration is invalid")
+		return config, errors.New("币安 K 线订阅配置无效")
 	}
 	return normalizeBinanceCandleStreamConfig(config)
 }
@@ -148,7 +148,7 @@ func parseBinanceCandleBackfillConfig(raw json.RawMessage, now time.Time) (binan
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&payload) != nil || payload.CandleCount < 1 || payload.CandleCount > 10000 {
-		return binanceCandleBackfillConfig{}, errors.New("Binance candle backfill configuration is invalid")
+		return binanceCandleBackfillConfig{}, errors.New("币安 K 线补齐配置无效")
 	}
 	stream, err := normalizeBinanceCandleStreamConfig(binanceCandleStreamConfig{Market: payload.Market, Instrument: payload.Instrument, Intervals: payload.Intervals, ProxyID: payload.ProxyID})
 	if err != nil {
@@ -159,7 +159,7 @@ func parseBinanceCandleBackfillConfig(raw json.RawMessage, now time.Time) (binan
 		end, err = time.Parse(time.RFC3339, value)
 		_, offset := end.Zone()
 		if err != nil || offset != 0 || end.After(now) {
-			return binanceCandleBackfillConfig{}, errors.New("Binance candle backfill end time is invalid")
+			return binanceCandleBackfillConfig{}, errors.New("币安 K 线补齐结束时间无效")
 		}
 	}
 	return binanceCandleBackfillConfig{binanceCandleStreamConfig: stream, CandleCount: payload.CandleCount, EndTime: end.UTC()}, nil
@@ -170,12 +170,12 @@ func normalizeBinanceCandleStreamConfig(config binanceCandleStreamConfig) (binan
 	config.Instrument = strings.ToUpper(strings.TrimSpace(config.Instrument))
 	if config.Market != "spot" && config.Market != "usdm" || !instrumentPattern.MatchString(config.Instrument) ||
 		len(config.Intervals) == 0 || len(config.Intervals) > len(binanceIntervalOrder) || config.ProxyID < 0 {
-		return config, errors.New("Binance candle stream configuration is invalid")
+		return config, errors.New("币安 K 线订阅配置无效")
 	}
 	selected := make(map[string]bool, len(config.Intervals))
 	for _, interval := range config.Intervals {
 		if _, ok := binanceIntervals[interval]; !ok || selected[interval] {
-			return config, errors.New("Binance candle interval is unsupported or duplicated")
+			return config, errors.New("币安 K 线周期不支持或重复")
 		}
 		selected[interval] = true
 	}
@@ -193,7 +193,7 @@ func parseBinanceInstrumentSyncConfig(raw json.RawMessage) (binanceInstrumentSyn
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&config) != nil {
-		return config, errors.New("Binance instrument sync configuration is invalid")
+		return config, errors.New("币安品种同步配置无效")
 	}
 	config.Markets = normalizeBinanceFilter(config.Markets, true)
 	config.QuoteAssets = normalizeBinanceFilter(config.QuoteAssets, false)
@@ -202,11 +202,11 @@ func parseBinanceInstrumentSyncConfig(raw json.RawMessage) (binanceInstrumentSyn
 	config.SymbolAllowlist = normalizeBinanceFilter(config.SymbolAllowlist, false)
 	config.SymbolDenylist = normalizeBinanceFilter(config.SymbolDenylist, false)
 	if len(config.Markets) == 0 || len(config.QuoteAssets) == 0 || config.ProxyID < 0 {
-		return config, errors.New("Binance instrument sync markets and quote assets are required")
+		return config, errors.New("币安品种同步须指定市场和计价资产")
 	}
 	for _, market := range config.Markets {
 		if market != "spot" && market != "usdm" {
-			return config, errors.New("Binance instrument sync market is invalid")
+			return config, errors.New("币安品种同步市场无效")
 		}
 	}
 	return config, nil

@@ -17,5 +17,3 @@ export const nodeEditors = {
 }
 
 export const providerConfigComponents = { binance: schemaEditor }
-
-export const resultConfigs = { paper: () => import('./PaperResultConfig.vue') }

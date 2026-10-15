@@ -201,17 +201,17 @@ func decodeBody[T any](c *gin.Context) (*T, error) {
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
-		return nil, errors.New("invalid AI request body")
+		return nil, errors.New("AI 请求体无效")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, errors.New("request must contain one object")
+		return nil, errors.New("请求须包含单个对象")
 	}
 	return &payload, nil
 }
 func pathInt64(c *gin.Context, name string) (int64, error) {
 	id, err := strconv.ParseInt(c.Param(name), 10, 64)
 	if err != nil || id <= 0 {
-		return 0, errors.New("invalid path parameter")
+		return 0, errors.New("路径参数无效")
 	}
 	return id, nil
 }

@@ -183,10 +183,10 @@ func (a *App) CreateWorkflow(ctx context.Context, payload WorkflowCreatePayload,
 		templateKey = WorkflowTemplateBlank
 	}
 	if name == "" || utf8.RuneCountInString(name) > 120 {
-		return WorkflowDetail{}, errors.New("workflow name must contain 1 to 120 characters")
+		return WorkflowDetail{}, errors.New("工作流名称须为 1 至 120 个字符")
 	}
 	if utf8.RuneCountInString(description) > 500 {
-		return WorkflowDetail{}, errors.New("workflow description must not exceed 500 characters")
+		return WorkflowDetail{}, errors.New("工作流说明不能超过 500 个字符")
 	}
 	templateGraph, ok := a.workflowTemplate(templateKey)
 	if len(payload.Graph) > 0 {
@@ -194,14 +194,14 @@ func (a *App) CreateWorkflow(ctx context.Context, payload WorkflowCreatePayload,
 		ok = true
 	}
 	if !ok {
-		return WorkflowDetail{}, fmt.Errorf("unknown workflow template %q", templateKey)
+		return WorkflowDetail{}, fmt.Errorf("工作流模板 %q 不存在", templateKey)
 	}
 	if principal == nil || principal.User == nil || principal.User.ID <= 0 {
 		return WorkflowDetail{}, ErrPermission
 	}
 	graph, err := a.validateWorkflowGraph(templateGraph)
 	if err != nil {
-		return WorkflowDetail{}, fmt.Errorf("workflow graph is invalid: %w", err)
+		return WorkflowDetail{}, fmt.Errorf("工作流定义无效：%w", err)
 	}
 
 	now := time.Now().UTC()
@@ -246,7 +246,7 @@ func (a *App) CreateWorkflow(ctx context.Context, payload WorkflowCreatePayload,
 			backlog = 100
 		}
 		if concurrency < 1 || concurrency > 32 || backlog < 1 || backlog > 10000 {
-			return errors.New("invalid workflow capacity")
+			return errors.New("工作流容量配置无效")
 		}
 		if graphHasPersistentState(graph) {
 			concurrency = 1
@@ -265,23 +265,23 @@ func (a *App) createWorkflowRecord(tx *gorm.DB, name, description string, groupI
 		MainTriggerNodeID: graph.mainTriggerID, RetentionDays: 30, CreatedBy: userID, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := tx.Create(&workflow).Error; err != nil {
-		return db.Workflow{}, errors.New("create workflow failed")
+		return db.Workflow{}, errors.New("创建工作流失败")
 	}
 	revision := db.WorkflowRevision{
 		WorkflowID: workflow.ID, RevisionNumber: 1, GraphJSON: graph.graphJSON,
 		NodeVersions: graph.nodeVersionsJSON, MainTriggerNodeID: graph.mainTriggerID, CreatedBy: userID, CreatedAt: now,
 	}
 	if err := tx.Create(&revision).Error; err != nil {
-		return db.Workflow{}, errors.New("create initial workflow revision failed")
+		return db.Workflow{}, errors.New("创建初始工作流版本失败")
 	}
 	workflow.DraftRevisionID = &revision.ID
 	if err := tx.Model(&db.Workflow{}).Where("id = ?", workflow.ID).Update("draft_revision_id", revision.ID).Error; err != nil {
-		return db.Workflow{}, errors.New("activate initial workflow revision failed")
+		return db.Workflow{}, errors.New("设置初始工作流版本失败")
 	}
 	if err := tx.Create(&db.WorkflowRuntime{
 		WorkflowID: workflow.ID, MaxConcurrentRuns: 2, BacklogLimit: 100, UpdatedAt: now,
 	}).Error; err != nil {
-		return db.Workflow{}, errors.New("create workflow runtime failed")
+		return db.Workflow{}, errors.New("创建工作流运行配置失败")
 	}
 	return workflow, nil
 }
@@ -289,7 +289,7 @@ func (a *App) createWorkflowRecord(tx *gorm.DB, name, description string, groupI
 func (a *App) ListWorkflows(ctx context.Context, status string) ([]WorkflowView, error) {
 	status = strings.TrimSpace(status)
 	if status != "" && !validWorkflowStatus(status) {
-		return nil, errors.New("invalid workflow status")
+		return nil, errors.New("工作流状态无效")
 	}
 	if err := requireAccount(ctx); err != nil {
 		return nil, err
@@ -300,7 +300,7 @@ func (a *App) ListWorkflows(ctx context.Context, status string) ([]WorkflowView,
 	}
 	var workflows []db.Workflow
 	if err := query.Find(&workflows).Error; err != nil {
-		return nil, errors.New("list workflows failed")
+		return nil, errors.New("读取工作流列表失败")
 	}
 	items := make([]WorkflowView, 0, len(workflows))
 	for _, workflow := range workflows {
@@ -316,18 +316,18 @@ func (a *App) GetWorkflow(ctx context.Context, workflowID int64) (WorkflowDetail
 	var workflow db.Workflow
 	if err := a.DB.WithContext(ctx).First(&workflow, workflowID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return WorkflowDetail{}, fmt.Errorf("%w: workflow", ErrNotFound)
+			return WorkflowDetail{}, fmt.Errorf("%w：工作流", ErrNotFound)
 		}
-		return WorkflowDetail{}, errors.New("load workflow failed")
+		return WorkflowDetail{}, errors.New("读取工作流失败")
 	}
 	var runtime db.WorkflowRuntime
 	if err := a.DB.WithContext(ctx).First(&runtime, "workflow_id = ?", workflowID).Error; err != nil {
-		return WorkflowDetail{}, errors.New("load workflow runtime failed")
+		return WorkflowDetail{}, errors.New("读取工作流运行配置失败")
 	}
 	stateNodeInstanceIDs := make([]string, 0)
 	if err := a.DB.WithContext(ctx).Model(&db.WorkflowNodeState{}).Where("workflow_id = ?", workflowID).
 		Order("node_instance_id").Pluck("node_instance_id", &stateNodeInstanceIDs).Error; err != nil {
-		return WorkflowDetail{}, errors.New("load workflow node states failed")
+		return WorkflowDetail{}, errors.New("读取工作流节点状态失败")
 	}
 	runtimeView := WorkflowRuntimeView{
 		MaxConcurrentRuns: runtime.MaxConcurrentRuns, BacklogLimit: runtime.BacklogLimit,
@@ -353,10 +353,10 @@ func (a *App) UpdateWorkflow(ctx context.Context, workflowID int64, payload Work
 	name := strings.TrimSpace(payload.Name)
 	description := strings.TrimSpace(payload.Description)
 	if name == "" || utf8.RuneCountInString(name) > 120 {
-		return WorkflowDetail{}, errors.New("workflow name must contain 1 to 120 characters")
+		return WorkflowDetail{}, errors.New("工作流名称须为 1 至 120 个字符")
 	}
 	if utf8.RuneCountInString(description) > 500 {
-		return WorkflowDetail{}, errors.New("workflow description must not exceed 500 characters")
+		return WorkflowDetail{}, errors.New("工作流说明不能超过 500 个字符")
 	}
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := a.authorizeWorkflowCommandTx(tx, ctx, workflowID); err != nil {
@@ -382,7 +382,7 @@ func (a *App) SaveWorkflowRevision(ctx context.Context, workflowID int64, payloa
 		return WorkflowRevisionView{}, err
 	}
 	if payload.ExpectedDraftRevisionID <= 0 {
-		return WorkflowRevisionView{}, errors.New("expectedDraftRevisionId must be positive")
+		return WorkflowRevisionView{}, errors.New("预期草稿版本编号须为正整数")
 	}
 	if principal == nil || principal.User == nil || principal.User.ID <= 0 {
 		return WorkflowRevisionView{}, ErrPermission
@@ -411,25 +411,25 @@ func (a *App) SaveWorkflowRevision(ctx context.Context, workflowID int64, payloa
 		var workflow db.Workflow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&workflow, workflowID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow", ErrNotFound)
+				return fmt.Errorf("%w：工作流", ErrNotFound)
 			}
-			return errors.New("lock workflow failed")
+			return errors.New("锁定工作流失败")
 		}
 		if workflow.DraftRevisionID == nil || *workflow.DraftRevisionID != payload.ExpectedDraftRevisionID {
-			return fmt.Errorf("%w: active workflow revision changed", ErrConflict)
+			return fmt.Errorf("%w：草稿版本已变更，请刷新版本信息", ErrConflict)
 		}
 		var activeRevision db.WorkflowRevision
 		if err := tx.Where("workflow_id = ? AND id = ?", workflowID, *workflow.DraftRevisionID).First(&activeRevision).Error; err != nil {
-			return errors.New("load active workflow revision failed")
+			return errors.New("读取当前工作流版本失败")
 		}
 		activeGraph, err := a.validateWorkflowGraph(json.RawMessage(activeRevision.GraphJSON))
 		if err != nil {
-			return errors.New("active workflow revision graph is invalid")
+			return errors.New("当前工作流版本的定义无效")
 		}
 		var latest int64
 		if err := tx.Model(&db.WorkflowRevision{}).Where("workflow_id = ?", workflowID).
 			Select("COALESCE(MAX(revision_number), 0)").Scan(&latest).Error; err != nil {
-			return errors.New("read latest workflow revision failed")
+			return errors.New("读取最新工作流版本失败")
 		}
 		now := time.Now().UTC()
 		revision = db.WorkflowRevision{
@@ -438,7 +438,7 @@ func (a *App) SaveWorkflowRevision(ctx context.Context, workflowID int64, payloa
 			CreatedBy: principal.User.ID, CreatedAt: now,
 		}
 		if err := tx.Create(&revision).Error; err != nil {
-			return errors.New("create workflow revision failed")
+			return errors.New("创建工作流版本失败")
 		}
 		if err := a.persistWorkflowSecrets(tx, workflowID, *workflow.DraftRevisionID, revision, activeGraph, graph, secretChanges, now); err != nil {
 			return err
@@ -447,12 +447,12 @@ func (a *App) SaveWorkflowRevision(ctx context.Context, workflowID int64, payloa
 			"draft_revision_id": revision.ID,
 			"updated_at":        now,
 		}).Error; err != nil {
-			return errors.New("activate workflow revision failed")
+			return errors.New("更新工作流草稿版本失败")
 		}
 		if payload.Metadata != nil {
 			name, description := strings.TrimSpace(payload.Metadata.Name), strings.TrimSpace(payload.Metadata.Description)
 			if name == "" || utf8.RuneCountInString(name) > 120 || utf8.RuneCountInString(description) > 500 {
-				return errors.New("invalid workflow metadata")
+				return errors.New("工作流名称或说明无效")
 			}
 			if err := tx.Model(&workflow).Updates(map[string]any{"name": name, "description": description}).Error; err != nil {
 				return err
@@ -483,7 +483,7 @@ func (a *App) pruneWorkflowRevisions(tx *gorm.DB, workflowID, retainedRevisionID
 	var revisionIDs []int64
 	if err := tx.Model(&db.WorkflowRevision{}).Where("workflow_id = ?", workflowID).
 		Order("revision_number DESC").Pluck("id", &revisionIDs).Error; err != nil {
-		return errors.New("list workflow revisions for pruning failed")
+		return errors.New("读取待清理的工作流版本失败")
 	}
 	for index := maxWorkflowRevisions; index < len(revisionIDs); index++ {
 		id := revisionIDs[index]
@@ -509,10 +509,10 @@ func (a *App) deleteWorkflowRevisionRecord(tx *gorm.DB, workflowID, revisionID, 
 	} else {
 		var runCount int64
 		if err := tx.Model(&db.WorkflowRun{}).Where("workflow_id = ? AND revision_id = ?", workflowID, revisionID).Count(&runCount).Error; err != nil {
-			return errors.New("check workflow revision references failed")
+			return errors.New("检查工作流版本引用失败")
 		}
 		if runCount > 0 {
-			return fmt.Errorf("%w: workflow revision is referenced by workflow runs", ErrConflict)
+			return fmt.Errorf("%w：工作流版本仍被运行记录引用", ErrConflict)
 		}
 	}
 	if removeOutputs {
@@ -529,11 +529,11 @@ func (a *App) deleteWorkflowRevisionRecord(tx *gorm.DB, workflowID, revisionID, 
 
 	if err := tx.Where("workflow_id = ? AND revision_id = ?", workflowID, revisionID).
 		Delete(&db.WorkflowSecretBinding{}).Error; err != nil {
-		return errors.New("delete workflow revision secrets failed")
+		return errors.New("删除工作流版本凭据失败")
 	}
 	if err := tx.Where("workflow_id = ? AND id = ?", workflowID, revisionID).
 		Delete(&db.WorkflowRevision{}).Error; err != nil {
-		return errors.New("delete workflow revision failed")
+		return errors.New("删除工作流版本失败")
 	}
 	return nil
 }
@@ -544,15 +544,15 @@ func (a *App) ListWorkflowRevisions(ctx context.Context, workflowID int64) ([]Wo
 	}
 	var count int64
 	if err := a.DB.WithContext(ctx).Model(&db.Workflow{}).Where("id = ?", workflowID).Count(&count).Error; err != nil {
-		return nil, errors.New("load workflow failed")
+		return nil, errors.New("读取工作流失败")
 	}
 	if count == 0 {
-		return nil, fmt.Errorf("%w: workflow", ErrNotFound)
+		return nil, fmt.Errorf("%w：工作流", ErrNotFound)
 	}
 	var revisions []db.WorkflowRevision
 	if err := a.DB.WithContext(ctx).Where("workflow_id = ?", workflowID).
 		Order("revision_number DESC").Find(&revisions).Error; err != nil {
-		return nil, errors.New("list workflow revisions failed")
+		return nil, errors.New("读取工作流版本列表失败")
 	}
 	items := make([]WorkflowRevisionView, 0, len(revisions))
 	for _, revision := range revisions {
@@ -571,9 +571,9 @@ func (a *App) GetWorkflowRevision(ctx context.Context, workflowID, revisionID in
 	var revision db.WorkflowRevision
 	if err := a.DB.WithContext(ctx).Where("workflow_id = ? AND id = ?", workflowID, revisionID).First(&revision).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return WorkflowRevisionView{}, fmt.Errorf("%w: workflow revision", ErrNotFound)
+			return WorkflowRevisionView{}, fmt.Errorf("%w：工作流版本", ErrNotFound)
 		}
-		return WorkflowRevisionView{}, errors.New("load workflow revision failed")
+		return WorkflowRevisionView{}, errors.New("读取工作流版本失败")
 	}
 	views := []WorkflowRevisionView{workflowRevisionView(revision)}
 	if err := a.attachWorkflowRevisionSecrets(ctx, workflowID, views); err != nil {
@@ -589,12 +589,12 @@ func (a *App) DeleteWorkflowRevision(ctx context.Context, workflowID, revisionID
 	var workflow db.Workflow
 	if err := a.DB.WithContext(ctx).Select("id", "draft_revision_id", "published_revision_id").First(&workflow, workflowID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: workflow", ErrNotFound)
+			return fmt.Errorf("%w：工作流", ErrNotFound)
 		}
-		return errors.New("load workflow failed")
+		return errors.New("读取工作流失败")
 	}
 	if workflow.DraftRevisionID != nil && *workflow.DraftRevisionID == revisionID || workflow.PublishedRevisionID != nil && *workflow.PublishedRevisionID == revisionID {
-		return fmt.Errorf("%w: active workflow revision cannot be deleted", ErrConflict)
+		return fmt.Errorf("%w：当前工作流版本不能删除", ErrConflict)
 	}
 	if err := a.cancelWorkflowRuns(ctx, workflowID, &revisionID); err != nil {
 		return err
@@ -610,22 +610,22 @@ func (a *App) DeleteWorkflowRevision(ctx context.Context, workflowID, revisionID
 		var workflow db.Workflow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&workflow, workflowID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow", ErrNotFound)
+				return fmt.Errorf("%w：工作流", ErrNotFound)
 			}
-			return errors.New("lock workflow failed")
+			return errors.New("锁定工作流失败")
 		}
 		var revision db.WorkflowRevision
 		if err := tx.Where("workflow_id = ? AND id = ?", workflowID, revisionID).First(&revision).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow revision", ErrNotFound)
+				return fmt.Errorf("%w：工作流版本", ErrNotFound)
 			}
-			return errors.New("load workflow revision failed")
+			return errors.New("读取工作流版本失败")
 		}
 		if workflow.DraftRevisionID != nil && *workflow.DraftRevisionID == revisionID || workflow.PublishedRevisionID != nil && *workflow.PublishedRevisionID == revisionID {
-			return fmt.Errorf("%w: active workflow revision cannot be deleted", ErrConflict)
+			return fmt.Errorf("%w：当前工作流版本不能删除", ErrConflict)
 		}
 		if err := tx.Exec("SET LOCAL coinsphere.workflow_delete = 'on'").Error; err != nil {
-			return errors.New("enable workflow deletion mode failed")
+			return errors.New("准备删除工作流失败")
 		}
 		var err error
 		storageKeys, err = deleteWorkflowRunTree(tx, "workflow_id = ? AND revision_id = ?", workflowID, revisionID)
@@ -646,7 +646,7 @@ func (a *App) DeleteWorkflow(ctx context.Context, workflowID int64) error {
 		return err
 	}
 	if workflowID <= 0 {
-		return fmt.Errorf("%w: workflow", ErrNotFound)
+		return fmt.Errorf("%w：工作流", ErrNotFound)
 	}
 	var storageKeys []string
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -656,22 +656,22 @@ func (a *App) DeleteWorkflow(ctx context.Context, workflowID int64) error {
 		var workflow db.Workflow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&workflow, workflowID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow", ErrNotFound)
+				return fmt.Errorf("%w：工作流", ErrNotFound)
 			}
-			return errors.New("lock workflow failed")
+			return errors.New("锁定工作流失败")
 		}
 		if workflow.Status == WorkflowStatusActive {
-			return fmt.Errorf("%w: active workflow cannot be deleted", ErrConflict)
+			return fmt.Errorf("%w：请先停用工作流再删除", ErrConflict)
 		}
 		var activeRuns int64
 		if err := tx.Raw(fmt.Sprintf(workflowRunTreeCTE, "workflow_id = ?")+`SELECT COUNT(*) FROM workflow_runs WHERE id IN (SELECT id FROM run_tree) AND status = ?`, workflowID, RunStatusRunning).Scan(&activeRuns).Error; err != nil {
-			return errors.New("check workflow runs before deletion failed")
+			return errors.New("检查工作流运行记录失败")
 		}
 		if activeRuns > 0 {
-			return fmt.Errorf("%w: workflow has active runs", ErrConflict)
+			return fmt.Errorf("%w：工作流仍有未结束的运行", ErrConflict)
 		}
 		if err := tx.Exec("SET LOCAL coinsphere.workflow_delete = 'on'").Error; err != nil {
-			return errors.New("enable workflow deletion mode failed")
+			return errors.New("准备删除工作流失败")
 		}
 		var err error
 		storageKeys, err = deleteWorkflowRunTree(tx, "workflow_id = ?", workflowID)
@@ -682,24 +682,24 @@ func (a *App) DeleteWorkflow(ctx context.Context, workflowID int64) error {
 			return err
 		}
 		if err := tx.Where("workflow_id = ?", workflowID).Delete(&db.WorkflowNodeState{}).Error; err != nil {
-			return errors.New("delete workflow node states failed")
+			return errors.New("删除工作流节点状态失败")
 		}
 		if err := tx.Where("workflow_id = ?", workflowID).Delete(&db.WorkflowSecretBinding{}).Error; err != nil {
-			return errors.New("delete workflow secrets failed")
+			return errors.New("删除工作流凭据失败")
 		}
 		if err := tx.Model(&workflow).Updates(map[string]any{
 			"published_revision_id": nil, "draft_revision_id": nil, "updated_at": time.Now().UTC(),
 		}).Error; err != nil {
-			return errors.New("clear workflow active revision failed")
+			return errors.New("解除当前工作流版本引用失败")
 		}
 		if err := tx.Where("workflow_id = ?", workflowID).Delete(&db.WorkflowRevision{}).Error; err != nil {
-			return errors.New("delete workflow revisions failed")
+			return errors.New("删除工作流版本失败")
 		}
 		if err := tx.Where("workflow_id = ?", workflowID).Delete(&db.WorkflowRuntime{}).Error; err != nil {
-			return errors.New("delete workflow runtime failed")
+			return errors.New("删除工作流运行配置失败")
 		}
 		if err := tx.Where("id = ?", workflowID).Delete(&db.Workflow{}).Error; err != nil {
-			return errors.New("delete workflow failed")
+			return errors.New("删除工作流失败")
 		}
 		return nil
 	})
@@ -715,7 +715,7 @@ func (a *App) removeWorkflowArtifacts(storageKeys []string) error {
 			continue
 		}
 		if err := os.Remove(filepath.Join(a.ArtifactRoot, filepath.FromSlash(key))); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return errors.New("remove workflow artifact failed")
+			return errors.New("移除工作流制品失败")
 		}
 	}
 	return nil
@@ -734,7 +734,7 @@ func deleteWorkflowRunTree(tx *gorm.DB, rootWhere string, args ...any) ([]string
 FROM workflow_artifact_refs ref
 JOIN workflow_run_nodes node ON node.id = ref.run_node_id
 WHERE node.run_id IN (SELECT id FROM run_tree)`, args...).Scan(&digests).Error; err != nil {
-		return nil, errors.New("collect workflow artifacts failed")
+		return nil, errors.New("收集工作流制品失败")
 	}
 	statements := []string{
 		`DELETE FROM workflow_human_tasks WHERE run_id IN (SELECT id FROM run_tree)`,
@@ -746,7 +746,7 @@ WHERE node.run_id IN (SELECT id FROM run_tree)`, args...).Scan(&digests).Error; 
 	}
 	for _, statement := range statements {
 		if err := tx.Exec(cte+statement, args...).Error; err != nil {
-			return nil, errors.New("delete workflow run details failed")
+			return nil, errors.New("删除工作流运行详情失败")
 		}
 	}
 	for {
@@ -758,7 +758,7 @@ WHERE id = (
     LIMIT 1
 )`, args...)
 		if result.Error != nil {
-			return nil, errors.New("delete workflow runs failed")
+			return nil, errors.New("删除工作流运行记录失败")
 		}
 		if result.RowsAffected == 0 {
 			break
@@ -769,19 +769,19 @@ WHERE id = (
 	}
 	var artifacts []db.WorkflowArtifact
 	if err := tx.Where("sha256 IN ?", digests).Find(&artifacts).Error; err != nil {
-		return nil, errors.New("load workflow artifacts failed")
+		return nil, errors.New("读取工作流制品失败")
 	}
 	storageKeys := make([]string, 0, len(artifacts))
 	for _, artifact := range artifacts {
 		var references int64
 		if err := tx.Model(&db.WorkflowArtifactRef{}).Where("artifact_sha256 = ?", artifact.SHA256).Count(&references).Error; err != nil {
-			return nil, errors.New("check workflow artifact references failed")
+			return nil, errors.New("检查工作流制品引用失败")
 		}
 		if references != 0 {
 			continue
 		}
 		if err := tx.Delete(&artifact).Error; err != nil {
-			return nil, errors.New("delete workflow artifact failed")
+			return nil, errors.New("删除工作流制品失败")
 		}
 		storageKeys = append(storageKeys, artifact.StorageKey)
 	}
@@ -800,16 +800,16 @@ func (a *App) cancelWorkflowRuns(ctx context.Context, workflowID int64, revision
 		var workflow db.Workflow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&workflow, workflowID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow", ErrNotFound)
+				return fmt.Errorf("%w：工作流", ErrNotFound)
 			}
-			return errors.New("lock workflow failed")
+			return errors.New("锁定工作流失败")
 		}
 		query := tx.Model(&db.WorkflowRun{}).Where("workflow_id = ? AND status IN ?", workflowID, []string{RunStatusQueued, RunStatusRunning, RunStatusWaiting, RunStatusRetrying})
 		if revisionID != nil {
 			query = query.Where("revision_id = ?", *revisionID)
 		}
 		if err := query.Pluck("id", &runIDs).Error; err != nil {
-			return errors.New("list workflow runs for cancellation failed")
+			return errors.New("读取待取消的工作流运行失败")
 		}
 		now := time.Now().UTC()
 		runQuery := tx.Model(&db.WorkflowRun{}).Where("workflow_id = ? AND status IN ?", workflowID, []string{RunStatusQueued, RunStatusWaiting, RunStatusRetrying})
@@ -818,7 +818,7 @@ func (a *App) cancelWorkflowRuns(ctx context.Context, workflowID int64, revision
 		}
 		if err := runQuery.
 			Updates(map[string]any{"status": RunStatusCancelled, "cancel_requested_at": now, "completed_at": now, "lease_token": nil, "lease_expires_at": nil, "updated_at": now}).Error; err != nil {
-			return errors.New("cancel queued workflow runs failed")
+			return errors.New("取消排队中的工作流运行失败")
 		}
 		runQuery = tx.Model(&db.WorkflowRun{}).Where("workflow_id = ? AND status = ?", workflowID, RunStatusRunning)
 		if revisionID != nil {
@@ -826,7 +826,7 @@ func (a *App) cancelWorkflowRuns(ctx context.Context, workflowID int64, revision
 		}
 		if err := runQuery.
 			Updates(map[string]any{"cancel_requested_at": now, "updated_at": now}).Error; err != nil {
-			return errors.New("request running workflow cancellation failed")
+			return errors.New("提交工作流取消请求失败")
 		}
 		for _, id := range runIDs {
 			var run db.WorkflowRun
@@ -864,7 +864,7 @@ func (a *App) waitWorkflowRuns(ctx context.Context, workflowID int64, revisionID
 		}
 		var count int64
 		if err := query.Count(&count).Error; err != nil {
-			return errors.New("check workflow run cancellation failed")
+			return errors.New("检查工作流取消状态失败")
 		}
 		if count == 0 {
 			return nil
@@ -889,16 +889,16 @@ func (a *App) ApplyWorkflowLifecycle(ctx context.Context, workflowID int64, payl
 		var workflow db.Workflow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&workflow, workflowID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: workflow", ErrNotFound)
+				return fmt.Errorf("%w：工作流", ErrNotFound)
 			}
-			return errors.New("lock workflow failed")
+			return errors.New("锁定工作流失败")
 		}
 		next, err := nextWorkflowStatus(workflow.Status, action)
 		if err != nil {
 			return err
 		}
 		if action == "activate" && workflow.PublishedRevisionID == nil {
-			return fmt.Errorf("%w: workflow is not startable", ErrConflict)
+			return fmt.Errorf("%w：工作流当前无法启用", ErrConflict)
 		}
 		now := time.Now().UTC()
 		updates := map[string]any{"status": next, "updated_at": now}
@@ -906,11 +906,11 @@ func (a *App) ApplyWorkflowLifecycle(ctx context.Context, workflowID int64, payl
 		if action == "activate" {
 			var revision db.WorkflowRevision
 			if err := tx.First(&revision, *workflow.PublishedRevisionID).Error; err != nil {
-				return errors.New("load active workflow revision failed")
+				return errors.New("读取当前工作流版本失败")
 			}
 			validated, err := a.validateWorkflowGraph(json.RawMessage(revision.GraphJSON))
 			if err != nil {
-				return fmt.Errorf("%w: active workflow revision is invalid", ErrConflict)
+				return fmt.Errorf("%w：当前工作流版本无效", ErrConflict)
 			}
 			owner, err := personalPrincipalTx(tx)
 			if err != nil {
@@ -930,7 +930,7 @@ func (a *App) ApplyWorkflowLifecycle(ctx context.Context, workflowID int64, payl
 			if trigger.NodeType == "core.schedule" {
 				next, err := nextWorkflowScheduledAt(trigger.Config, now)
 				if err != nil {
-					return fmt.Errorf("%w: schedule config is invalid", ErrConflict)
+					return fmt.Errorf("%w：定时配置无效", ErrConflict)
 				}
 				runtimeUpdates["next_scheduled_at"] = next
 			}
@@ -938,11 +938,11 @@ func (a *App) ApplyWorkflowLifecycle(ctx context.Context, workflowID int64, payl
 			runtimeUpdates = map[string]any{"updated_at": now, "next_scheduled_at": nil, "trigger_lease_token": nil, "trigger_lease_expires_at": nil}
 		}
 		if err := tx.Model(&db.Workflow{}).Where("id = ?", workflowID).Updates(updates).Error; err != nil {
-			return errors.New("update workflow lifecycle failed")
+			return errors.New("更新工作流启用状态失败")
 		}
 		if runtimeUpdates != nil {
 			if err := tx.Model(&db.WorkflowRuntime{}).Where("workflow_id = ?", workflowID).Updates(runtimeUpdates).Error; err != nil {
-				return errors.New("update workflow runtime schedule failed")
+				return errors.New("更新工作流定时配置失败")
 			}
 		}
 		return nil
@@ -967,9 +967,9 @@ func nextWorkflowStatus(current, action string) (string, error) {
 			return WorkflowStatusInactive, nil
 		}
 	default:
-		return "", errors.New("lifecycle action must be activate or deactivate")
+		return "", errors.New("工作流操作须为启用或停用")
 	}
-	return "", fmt.Errorf("%w: cannot %s workflow from %s", ErrConflict, action, current)
+	return "", fmt.Errorf("%w：无法执行工作流操作 %s，当前状态为 %s", ErrConflict, action, current)
 }
 
 func workflowView(workflow db.Workflow) WorkflowView {

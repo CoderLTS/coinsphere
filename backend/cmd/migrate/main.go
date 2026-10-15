@@ -187,6 +187,11 @@ func applyOfficial(ctx context.Context, database *sql.DB, output io.Writer) erro
 		}
 		schemas[bundle.ID] = bundle.Schema
 	}
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for _, p := range version.BuiltinCatalog {
 		schema := schemas[p.ID]
 		if schema == "" {
@@ -196,10 +201,34 @@ func applyOfficial(ctx context.Context, database *sql.DB, output io.Writer) erro
 				return err
 			}
 		}
-		if _, err := database.ExecContext(ctx, "INSERT INTO plugin_installations(plugin_id,version,schema_name,source_path,status) VALUES($1,$2,$3,'builtin','installed') ON CONFLICT(plugin_id) DO NOTHING", p.ID, p.Version, schema); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO plugin_installations(plugin_id,version,schema_name,source_path,status) VALUES($1,$2,$3,'builtin','installed') ON CONFLICT(plugin_id) DO NOTHING", p.ID, p.Version, schema); err != nil {
+			return err
+		}
+		var installedVersion, source string
+		if err := tx.QueryRowContext(ctx, "SELECT version,source_path FROM plugin_installations WHERE plugin_id=$1 FOR UPDATE", p.ID).Scan(&installedVersion, &source); err != nil {
+			return err
+		}
+		if source != "builtin" {
+			return fmt.Errorf("官方插件 %s 与已有安装记录冲突", p.ID)
+		}
+		if installedVersion == p.Version {
+			continue
+		}
+		// 与发布和运行建立引用共用安装行锁，防止版本切换时出现新的活动引用。
+		var referenced bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM plugin_references WHERE plugin_id=$1 AND active)", p.ID).Scan(&referenced); err != nil {
+			return err
+		}
+		if referenced {
+			return fmt.Errorf("官方插件 %s 存在活动引用，不能切换版本 %s → %s", p.ID, installedVersion, p.Version)
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE plugin_installations SET version=$2,updated_at=CURRENT_TIMESTAMP WHERE plugin_id=$1", p.ID, p.Version); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(output, "official plugin baselines are current")
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(output, "official plugin baselines are current")
 	return err
 }

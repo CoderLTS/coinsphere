@@ -26,15 +26,15 @@ func ParseCursorPage(raw string, limit int, scope string) (CursorPage, error) {
 		return page, nil
 	}
 	if len(raw) > 2048 {
-		return CursorPage{}, errors.New("invalid cursor")
+		return CursorPage{}, errors.New("分页游标无效，请重新查询")
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
-		return CursorPage{}, errors.New("invalid cursor")
+		return CursorPage{}, errors.New("分页游标无效，请重新查询")
 	}
 	var payload cursorPayload
 	if err := json.Unmarshal(decoded, &payload); err != nil || payload.Version != 1 || payload.Scope != scope || payload.Key == "" {
-		return CursorPage{}, errors.New("invalid cursor")
+		return CursorPage{}, errors.New("分页游标无效，请重新查询")
 	}
 	page.After = payload.Key
 	return page, nil
@@ -46,7 +46,7 @@ func (p CursorPage) AfterID() (int64, error) {
 	}
 	id, err := strconv.ParseInt(p.After, 10, 64)
 	if err != nil || id <= 0 {
-		return 0, errors.New("invalid cursor")
+		return 0, errors.New("分页游标无效，请重新查询")
 	}
 	return id, nil
 }

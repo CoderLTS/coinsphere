@@ -105,7 +105,7 @@ func appendWorkflowNodeLog(database *gorm.DB, entry db.WorkflowNodeLog) error {
 		entry.LoggedAt = time.Now().UTC()
 	}
 	if err := database.Create(&entry).Error; err != nil {
-		return errors.New("persist workflow node log failed")
+		return errors.New("保存工作流节点日志失败")
 	}
 	return nil
 }

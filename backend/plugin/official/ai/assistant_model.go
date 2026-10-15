@@ -69,7 +69,7 @@ func (a *runtime) runAssistantModel(ctx context.Context, runtime assistantModelR
 		completion, err := streamAssistantCompletion(ctx, runtime, messages, definitions, func(content string) error {
 			contentBytes += len(content)
 			if contentBytes > aiProviderResponseLimit {
-				return errors.New("AI model response exceeds size limit")
+				return errors.New("AI 模型响应超过大小限制")
 			}
 			contentParts = append(contentParts, content)
 			return emit(AssistantStreamEvent{Name: "content", Data: map[string]string{"content": content}})
@@ -107,7 +107,7 @@ func (a *runtime) runAssistantModel(ctx context.Context, runtime assistantModelR
 				workflow = candidate
 			}
 			if len(result) > 64<<10 {
-				result = json.RawMessage(`{"ok":false,"error":"tool result exceeds 64 KiB"}`)
+				result = json.RawMessage(`{"ok":false,"error":"工具结果超过 64 KiB"}`)
 			}
 			messages = append(messages, assistantChatMessage{
 				Role: "tool", ToolCallID: call.ID, Content: string(result),
@@ -117,7 +117,7 @@ func (a *runtime) runAssistantModel(ctx context.Context, runtime assistantModelR
 	if workflow != nil {
 		return assistantRunResult{Content: strings.Join(contentParts, ""), Workflow: workflow}, nil
 	}
-	return assistantRunResult{}, errors.New("assistant tool call round limit exceeded")
+	return assistantRunResult{}, errors.New("助手工具调用轮数超过上限")
 }
 
 func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntime, messages []assistantChatMessage, tools []assistantToolDefinition, onContent func(string) error) (assistantCompletion, error) {
@@ -128,11 +128,11 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 		"tool_choice": "auto", "stream": true,
 	})
 	if err != nil {
-		return assistantCompletion{}, errors.New("encode AI model request failed")
+		return assistantCompletion{}, errors.New("编码 AI 模型请求失败")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, runtime.endpoint("chat/completions"), bytes.NewReader(body))
 	if err != nil {
-		return assistantCompletion{}, errors.New("build AI model request failed")
+		return assistantCompletion{}, errors.New("创建 AI 模型请求失败")
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
@@ -145,12 +145,12 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 		if ctx.Err() != nil {
 			return assistantCompletion{}, ctx.Err()
 		}
-		return assistantCompletion{}, errors.New("AI model request failed")
+		return assistantCompletion{}, errors.New("AI 模型请求失败")
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		_, _ = readBounded(response.Body, 64<<10)
-		return assistantCompletion{}, errors.New("AI model rejected the request")
+		return assistantCompletion{}, errors.New("AI 模型拒绝了请求")
 	}
 
 	content := strings.Builder{}
@@ -160,7 +160,7 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 	err = scanAssistantSSE(response.Body, func(payload []byte) error {
 		readBytes += len(payload)
 		if readBytes > aiProviderResponseLimit {
-			return errors.New("AI model response exceeds size limit")
+			return errors.New("AI 模型响应超过大小限制")
 		}
 		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
 			streamDone = true
@@ -184,7 +184,7 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 			} `json:"choices"`
 		}
 		if json.Unmarshal(payload, &chunk) != nil || chunk.Error != nil {
-			return errors.New("AI model returned an invalid stream event")
+			return errors.New("AI 模型返回了无效流事件")
 		}
 		if len(chunk.Choices) == 0 {
 			return nil
@@ -217,7 +217,7 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 		return assistantCompletion{}, err
 	}
 	if !streamDone {
-		return assistantCompletion{}, errors.New("AI model stream ended before completion")
+		return assistantCompletion{}, errors.New("AI 模型流在完成前中断")
 	}
 	indexes := make([]int, 0, len(callParts))
 	for index := range callParts {
@@ -228,7 +228,7 @@ func streamAssistantCompletion(ctx context.Context, runtime assistantModelRuntim
 	for _, index := range indexes {
 		call := *callParts[index]
 		if call.ID == "" || call.Function.Name == "" || !json.Valid([]byte(call.Function.Arguments)) {
-			return assistantCompletion{}, errors.New("AI model returned an invalid tool call")
+			return assistantCompletion{}, errors.New("AI 模型返回了无效工具调用")
 		}
 		calls = append(calls, call)
 	}
@@ -252,7 +252,7 @@ func scanAssistantSSE(reader io.Reader, consume func([]byte) error) error {
 		line := scanner.Text()
 		total += len(line) + 1
 		if total > aiProviderResponseLimit {
-			return errors.New("AI model response exceeds size limit")
+			return errors.New("AI 模型响应超过大小限制")
 		}
 		if line == "" {
 			if err := flush(); err != nil {
@@ -265,7 +265,7 @@ func scanAssistantSSE(reader io.Reader, consume func([]byte) error) error {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return errors.New("read AI model stream failed")
+		return errors.New("读取 AI 模型流失败")
 	}
 	if err := flush(); err != nil {
 		return err

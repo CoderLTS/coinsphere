@@ -106,7 +106,7 @@ func (q *binanceRuntime) paperResult(ctx context.Context, scope paperResultScope
 		RunID int64
 	}
 	if err := query.Table("plugin_binance.orders").Select("plugin_binance.orders.*, (SELECT run_id FROM public.workflow_run_nodes rn WHERE rn.operation_key=plugin_binance.orders.operation_key ORDER BY rn.id DESC LIMIT 1) AS run_id").Find(&rows).Error; err != nil {
-		return nil, nil, errors.New("list Binance Paper orders failed")
+		return nil, nil, errors.New("读取币安模拟订单列表失败")
 	}
 	orders := make([]map[string]any, len(rows))
 	accountIDs := map[string]bool{}
@@ -133,18 +133,18 @@ func (q *binanceRuntime) paperAccounts(ctx context.Context, accountIDs map[strin
 	for _, accountID := range ids {
 		var cash decimal.Decimal
 		if err := q.db.WithContext(ctx).Model(&paperLedgerEntry{}).Where("account = ?", accountID).Select("COALESCE(SUM(amount), 0)").Scan(&cash).Error; err != nil {
-			return nil, errors.New("load Binance Paper balance failed")
+			return nil, errors.New("读取币安模拟余额失败")
 		}
 		var positions []tradingPosition
 		if err := q.db.WithContext(ctx).Where("account = ? AND mode = 'paper' AND quantity <> 0", accountID).Order("market, instrument").Find(&positions).Error; err != nil {
-			return nil, errors.New("load Binance Paper positions failed")
+			return nil, errors.New("读取币安模拟持仓失败")
 		}
 		equity := cash
 		positionViews := make([]map[string]any, len(positions))
 		for index, position := range positions {
 			quote, err := (marketDataProvider{runtime: q}).Quote(ctx, trading.QuoteQuery{Market: position.Market, Instrument: position.Instrument})
 			if err != nil || quote.Price.Sign() <= 0 {
-				return nil, errors.New("load Binance Paper position quote failed")
+				return nil, errors.New("读取币安模拟持仓报价失败")
 			}
 			if position.Market == "spot" {
 				equity = equity.Add(position.Quantity.Mul(quote.Price))
@@ -161,11 +161,11 @@ func (q *binanceRuntime) paperAccounts(ctx context.Context, accountIDs map[strin
 func (q *binanceRuntime) validatePaperScope(ctx context.Context, tx *gorm.DB, raw json.RawMessage) error {
 	var scope paperResultScope
 	if json.Unmarshal(raw, &scope) != nil {
-		return errors.New("invalid Paper scope")
+		return errors.New("模拟交易查询范围无效")
 	}
 	if scope.WorkflowID == 0 {
 		if scope.PaperNodeInstanceID != "" {
-			return errors.New("Paper node needs a workflow")
+			return errors.New("模拟交易节点须指定所属工作流")
 		}
 		return nil
 	}
@@ -181,7 +181,7 @@ func (q *binanceRuntime) validatePaperScope(ctx context.Context, tx *gorm.DB, ra
 			}
 		}
 		if json.Unmarshal([]byte(row.GraphJSON), &g) != nil {
-			return errors.New("invalid workflow graph")
+			return errors.New("工作流定义无效")
 		}
 		for _, n := range g.Nodes {
 			if (scope.PaperNodeInstanceID == "" || n.NodeInstanceID == scope.PaperNodeInstanceID) && n.NodeType == "official.binance.paper_execute" {
@@ -189,13 +189,13 @@ func (q *binanceRuntime) validatePaperScope(ctx context.Context, tx *gorm.DB, ra
 			}
 		}
 	}
-	return errors.New("scope must reference a Paper node in the workflow")
+	return errors.New("查询范围须引用所选工作流中的模拟交易节点")
 }
 
 func paperScopeResources(raw json.RawMessage) ([]sdk.WorkflowResource, error) {
 	var fixed paperResultScope
 	if json.Unmarshal(raw, &fixed) != nil || fixed.WorkflowID < 0 || fixed.PaperNodeInstanceID != "" && fixed.WorkflowID == 0 {
-		return nil, errors.New("invalid Paper scope")
+		return nil, errors.New("模拟交易查询范围无效")
 	}
 	if fixed.WorkflowID == 0 {
 		return []sdk.WorkflowResource{}, nil

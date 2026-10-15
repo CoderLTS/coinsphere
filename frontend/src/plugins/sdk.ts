@@ -6,16 +6,13 @@ export interface FrontendPluginModule {
   readonly headerActions?: Readonly<Record<string, FrontendComponentLoader>>
   readonly pages?: Readonly<Record<string, FrontendComponentLoader>>
   readonly runPanels?: Readonly<Record<string, FrontendComponentLoader>>
-  readonly resultConfigs?: Readonly<Record<string, FrontendComponentLoader>>
   readonly resultPages?: Readonly<Record<string, FrontendComponentLoader>>
   readonly nodeEditors?: Readonly<Record<string, FrontendComponentLoader>>
   readonly nodeRenderers?: Readonly<Record<string, FrontendComponentLoader>>
   readonly providerConfigComponents?: Readonly<Record<string, FrontendComponentLoader>>
 }
 
-export interface PluginResultContext {
-  scope: Record<string, unknown>
-  filters: Record<string, unknown>
+export interface PluginPageContext {
   pluginId: string
   pageKey: string
   allowedActions: readonly string[]

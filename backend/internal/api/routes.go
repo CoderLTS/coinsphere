@@ -79,6 +79,7 @@ func (s *Server) registerRoutes(router *gin.Engine) {
 	authenticated.POST("/notification-deliveries/:deliveryId/read", s.handleReadInAppNotification)
 	authenticated.POST("/notification-deliveries/read-all", s.handleReadAllInAppNotifications)
 	get(api, "/ws/notifications", s.handleNotificationWebSocket)
+	get(authenticated, "/workflow-runs", s.handleListWorkflowRuns)
 	get(authenticated, "/workflow-runs/:runId", s.handleGetWorkflowRun)
 	authenticated.POST("/workflow-runs/:runId", s.handleWorkflowRunAction)
 	get(authenticated, "/artifacts/:sha256/manifest", s.handleGetWorkflowArtifactManifest)

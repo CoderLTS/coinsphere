@@ -18,7 +18,7 @@ import (
 
 const workflowFailureEventType = "io.coinsphere.workflow.run.failed"
 
-var errWorkflowBackpressure = errors.New("workflow backlog limit reached")
+var errWorkflowBackpressure = errors.New("工作流积压数量已达上限")
 
 type WorkflowEventView struct {
 	ID           int64  `json:"id"`
@@ -126,18 +126,18 @@ func (a *App) persistWorkflowEventTx(tx *gorm.DB, event cloudevents.Event, targe
 	}
 	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
 	if result.Error != nil {
-		return db.WorkflowEventRecord{}, errors.New("persist workflow event failed")
+		return db.WorkflowEventRecord{}, errors.New("保存工作流事件失败")
 	}
 	if result.RowsAffected == 0 {
 		if err := tx.Where("source = ? AND event_id = ?", event.Source(), event.ID()).First(&record).Error; err != nil {
-			return db.WorkflowEventRecord{}, errors.New("load duplicate workflow event failed")
+			return db.WorkflowEventRecord{}, errors.New("读取重复工作流事件失败")
 		}
 		same, err := workflowJSONBEqual(tx, record.EventJSON, string(raw))
 		if err != nil {
-			return db.WorkflowEventRecord{}, errors.New("compare duplicate workflow event failed")
+			return db.WorkflowEventRecord{}, errors.New("比对重复工作流事件失败")
 		}
 		if !same {
-			return db.WorkflowEventRecord{}, fmt.Errorf("%w: CloudEvent identity already has different content", ErrConflict)
+			return db.WorkflowEventRecord{}, fmt.Errorf("%w：相同 CloudEvent 标识已对应其他内容", ErrConflict)
 		}
 	}
 	if err := a.deliverWorkflowEventTx(tx, record, event, targetWorkflowID, now); err != nil {
@@ -148,27 +148,27 @@ func (a *App) persistWorkflowEventTx(tx *gorm.DB, event cloudevents.Event, targe
 
 func validateWorkflowCloudEvent(event cloudevents.Event) ([]byte, string, map[string]any, error) {
 	if err := event.Validate(); err != nil || event.SpecVersion() != cloudevents.VersionV1 {
-		return nil, "", nil, errors.New("CloudEvent must be valid version 1.0")
+		return nil, "", nil, errors.New("CloudEvent 须符合 1.0 版本格式")
 	}
 	_, offset := event.Time().Zone()
 	if event.Time().IsZero() || offset != 0 {
-		return nil, "", nil, errors.New("CloudEvent time must be UTC")
+		return nil, "", nil, errors.New("CloudEvent 时间须使用 UTC")
 	}
 	if len(event.Source()) > 500 || len(event.ID()) > 128 || len(event.Type()) > 255 || len(event.Subject()) > 500 {
-		return nil, "", nil, errors.New("CloudEvent context attribute is too long")
+		return nil, "", nil, errors.New("CloudEvent 上下文字段过长")
 	}
 	partitionKey, _ := event.Extensions()["partitionkey"].(string)
 	partitionKey = strings.TrimSpace(partitionKey)
 	if partitionKey == "" || len(partitionKey) > 256 {
-		return nil, "", nil, errors.New("CloudEvent partitionkey must contain 1 to 256 bytes")
+		return nil, "", nil, errors.New("CloudEvent 分区键须为 1 至 256 字节")
 	}
 	var data map[string]any
 	if err := event.DataAs(&data); err != nil || data == nil {
-		return nil, "", nil, errors.New("CloudEvent data must be a JSON object")
+		return nil, "", nil, errors.New("CloudEvent 数据须为 JSON 对象")
 	}
 	raw, err := json.Marshal(event)
 	if err != nil || len(raw) > maxWorkflowGraphBytes {
-		return nil, "", nil, errors.New("CloudEvent exceeds the 1 MiB limit")
+		return nil, "", nil, errors.New("CloudEvent 超过 1 MiB 限制")
 	}
 	return raw, partitionKey, data, nil
 }
@@ -182,15 +182,15 @@ func (a *App) deliverWorkflowEventTx(tx *gorm.DB, record db.WorkflowEventRecord,
 	}
 	var workflows []db.Workflow
 	if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Order("id").Find(&workflows).Error; err != nil {
-		return errors.New("load workflow event subscribers failed")
+		return errors.New("读取工作流事件订阅者失败")
 	}
 	if targetWorkflowID > 0 && len(workflows) == 0 {
-		return fmt.Errorf("%w: target workflow is not running", ErrConflict)
+		return fmt.Errorf("%w：目标工作流未启用", ErrConflict)
 	}
 	for _, workflow := range workflows {
 		var revision db.WorkflowRevision
 		if err := tx.First(&revision, *workflow.PublishedRevisionID).Error; err != nil {
-			return errors.New("load workflow event revision failed")
+			return errors.New("读取工作流事件版本失败")
 		}
 		validated, err := a.validateWorkflowGraph(json.RawMessage(revision.GraphJSON))
 		if err != nil {
@@ -208,7 +208,7 @@ func (a *App) deliverWorkflowEventTx(tx *gorm.DB, record db.WorkflowEventRecord,
 		}
 		graph, err := a.buildWorkflowRunGraph(revision.GraphJSON)
 		if err != nil {
-			return errors.New("load workflow event graph failed")
+			return errors.New("读取工作流事件定义失败")
 		}
 		trigger := graph.nodes[revision.MainTriggerNodeID]
 		if targetWorkflowID == 0 && !workflowEventTriggerMatches(trigger.Config, event) {
@@ -217,7 +217,7 @@ func (a *App) deliverWorkflowEventTx(tx *gorm.DB, record db.WorkflowEventRecord,
 		var existing int64
 		if err := tx.Model(&db.WorkflowEventDelivery{}).
 			Where("event_record_id = ? AND workflow_id = ?", record.ID, workflow.ID).Count(&existing).Error; err != nil {
-			return errors.New("check workflow event delivery failed")
+			return errors.New("检查工作流事件投递失败")
 		}
 		if existing > 0 {
 			continue
@@ -239,7 +239,7 @@ func (a *App) deliverWorkflowEventTx(tx *gorm.DB, record db.WorkflowEventRecord,
 			Status: RunStatusQueued, NotBefore: now, TriggeredAt: event.Time().UTC(), ResultSummary: `{}`, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := tx.Create(&run).Error; err != nil {
-			return errors.New("create workflow event run failed")
+			return errors.New("创建工作流事件运行失败")
 		}
 		if err := a.syncRunPluginReferences(tx, run, validated); err != nil {
 			return err
@@ -248,7 +248,7 @@ func (a *App) deliverWorkflowEventTx(tx *gorm.DB, record db.WorkflowEventRecord,
 			EventRecordID: record.ID, WorkflowID: workflow.ID, RevisionID: revision.ID, RunID: run.ID, CreatedAt: now,
 		}
 		if err := tx.Create(&delivery).Error; err != nil {
-			return errors.New("record workflow event delivery failed")
+			return errors.New("记录工作流事件投递失败")
 		}
 	}
 	return nil
@@ -297,14 +297,14 @@ func (a *App) enqueueWorkflowEvent(tx *gorm.DB, event cloudevents.Event) error {
 		}
 		var existing db.WorkflowEventOutbox
 		if err := tx.Where("source = ? AND event_id = ?", event.Source(), event.ID()).First(&existing).Error; err != nil {
-			return errors.New("load duplicate workflow event outbox item failed")
+			return errors.New("读取重复的工作流事件发件箱条目失败")
 		}
 		same, err := workflowJSONBEqual(tx, existing.EventJSON, string(raw))
 		if err != nil {
-			return errors.New("compare duplicate workflow event outbox item failed")
+			return errors.New("比对重复的工作流事件发件箱条目失败")
 		}
 		if !same {
-			return fmt.Errorf("%w: CloudEvent outbox identity already has different content", ErrConflict)
+			return fmt.Errorf("%w：相同 CloudEvent 发件箱标识已对应其他内容", ErrConflict)
 		}
 	}
 	return nil
@@ -319,7 +319,7 @@ func (a *App) dispatchWorkflowEventOutbox(ctx context.Context, now time.Time) er
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
-			return errors.New("claim workflow event outbox failed")
+			return errors.New("领取工作流事件发件箱条目失败")
 		}
 		item.AttemptCount++
 		var event cloudevents.Event
@@ -365,19 +365,19 @@ func newWorkflowFailureEvent(run db.WorkflowRun, category string, now time.Time)
 
 func (a *App) workflowRunEvent(ctx context.Context, run db.WorkflowRun) (cloudevents.Event, map[string]any, error) {
 	if run.EventRecordID == nil {
-		return cloudevents.Event{}, nil, errors.New("workflow run has no event")
+		return cloudevents.Event{}, nil, errors.New("此次工作流运行没有关联事件")
 	}
 	var record db.WorkflowEventRecord
 	if err := a.DB.WithContext(ctx).First(&record, *run.EventRecordID).Error; err != nil {
-		return cloudevents.Event{}, nil, errors.New("load workflow run event failed")
+		return cloudevents.Event{}, nil, errors.New("读取工作流运行事件失败")
 	}
 	var event cloudevents.Event
 	if err := json.Unmarshal([]byte(record.EventJSON), &event); err != nil {
-		return cloudevents.Event{}, nil, errors.New("decode workflow run event failed")
+		return cloudevents.Event{}, nil, errors.New("解析工作流运行事件失败")
 	}
 	var data map[string]any
 	if err := event.DataAs(&data); err != nil || data == nil {
-		return cloudevents.Event{}, nil, errors.New("decode workflow run event data failed")
+		return cloudevents.Event{}, nil, errors.New("解析工作流运行事件数据失败")
 	}
 	return event, data, nil
 }

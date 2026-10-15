@@ -30,19 +30,10 @@ export class ComponentLoader {
     }
 
     if (componentPath.startsWith('plugin-result:')) {
-      const [pluginId, pageKey, ...rest] = componentPath.slice('plugin-result:'.length).split('/')
-      if (!pluginId || !pageKey || rest.length) return this.createErrorComponent(componentPath)
-      return async () => {
-        const { default: Page } = await import('@/components/plugins/PluginResultPage.vue')
-        return {
-          render() {
-            return h(Page, { pluginId, pageKey })
-          }
-        }
-      }
+      return this.loadPluginPage(componentPath.slice('plugin-result:'.length), 'result')
     }
     if (componentPath.startsWith('plugin:')) {
-      return this.loadPluginPage(componentPath)
+      return this.loadPluginPage(componentPath.slice('plugin:'.length), 'page')
     }
 
     // 构建可能的路径
@@ -62,12 +53,15 @@ export class ComponentLoader {
     return module
   }
 
-  private loadPluginPage(componentPath: string): () => Promise<any> {
-    const [pluginId, pageKey, ...rest] = componentPath.slice('plugin:'.length).split('/')
+  private loadPluginPage(
+    componentPath: string,
+    contributionType: 'page' | 'result'
+  ): () => Promise<any> {
+    const [pluginId, pageKey, ...rest] = componentPath.split('/')
     if (!pluginId || !pageKey || rest.length) return this.createErrorComponent(componentPath)
     return async () => {
-      const { default: Page } = await import('@/components/plugins/PluginPage.vue')
-      return { render: () => h(Page, { pluginId, pageKey }) }
+      const { default: Page } = await import('@/components/plugins/PluginRoutePage.vue')
+      return { render: () => h(Page, { pluginId, pageKey, contributionType }) }
     }
   }
 

@@ -15,7 +15,23 @@
       </div>
     </header>
 
-    <ElAlert v-if="error" :title="error" type="error" :closable="false" />
+    <ElForm inline size="small" @submit.prevent="apply">
+      <PaperResultConfig
+        v-model:scope="formScope"
+        v-model:filters="formFilters"
+        :filter-schema="filterSchema"
+      />
+      <ElFormItem
+        ><ElButton type="primary" native-type="submit">查询</ElButton
+        ><ElButton @click="reset">重置</ElButton></ElFormItem
+      >
+    </ElForm>
+    <ElAlert
+      v-if="queryError || error"
+      :title="queryError || error"
+      type="error"
+      :closable="false"
+    />
     <ElSelect v-if="accounts.length > 1" v-model="accountID" aria-label="账户"
       ><ElOption v-for="item in accounts" :key="item.id" :label="item.id" :value="item.id"
     /></ElSelect>
@@ -121,10 +137,68 @@
     type PaperOrder,
     type PaperOrderStatus
   } from './paper-api'
-  import type { PluginResultContext } from '@/plugins/sdk'
+  import type { PluginPageContext } from '@/plugins/sdk'
+  import { useRouteFilters } from '@/plugins/ui'
+  import PaperResultConfig from './PaperResultConfig.vue'
   import { formatDateTime as formatTime } from '@/utils/date'
 
-  const props = defineProps<{ context: PluginResultContext }>()
+  const props = defineProps<{ context: PluginPageContext }>()
+  const { form, applied, apply, reset, queryError } = useRouteFilters({
+    workflowId: 0,
+    paperNodeInstanceId: '',
+    market: '',
+    instrument: '',
+    status: ''
+  })
+  const formScope = computed({
+    get: () => ({
+      workflowId: form.workflowId || undefined,
+      paperNodeInstanceId: form.paperNodeInstanceId
+    }),
+    set: (value: Record<string, any>) => {
+      form.workflowId = Number(value.workflowId || 0)
+      form.paperNodeInstanceId = String(value.paperNodeInstanceId || '')
+    }
+  })
+  const formFilters = computed({
+    get: () => ({ market: form.market, instrument: form.instrument, status: form.status }),
+    set: (value: Record<string, any>) => {
+      form.market = value.market || ''
+      form.instrument = value.instrument || ''
+      form.status = value.status || ''
+    }
+  })
+  const filterSchema = {
+    type: 'object',
+    properties: {
+      market: {
+        type: 'string',
+        title: '市场',
+        enum: ['spot', 'usdm'],
+        enumLabels: ['现货', 'U 本位合约']
+      },
+      instrument: { type: 'string', title: '交易对' },
+      status: {
+        type: 'string',
+        title: '订单状态',
+        enum: ['new', 'partially_filled', 'filled', 'canceled', 'rejected', 'expired'],
+        enumLabels: ['待成交', '部分成交', '已成交', '已撤单', '已拒绝', '已过期']
+      }
+    }
+  }
+  const query = computed(() => ({
+    scope: {
+      ...(applied.value.workflowId ? { workflowId: applied.value.workflowId } : {}),
+      ...(applied.value.paperNodeInstanceId
+        ? { paperNodeInstanceId: applied.value.paperNodeInstanceId }
+        : {})
+    },
+    filters: Object.fromEntries(
+      Object.entries(applied.value).filter(
+        ([key, value]) => ['market', 'instrument', 'status'].includes(key) && value !== ''
+      )
+    )
+  }))
   const router = useRouter()
   const error = ref(''),
     accountID = ref('')
@@ -149,10 +223,16 @@
   let request = 0
   const load = async () => {
     const current = ++request
+    if (queryError.value) {
+      orders.value = []
+      accounts.value = []
+      loading.value = false
+      return
+    }
     loading.value = true
     error.value = ''
     try {
-      const result = await fetchDirectPaperResult(props.context)
+      const result = await fetchDirectPaperResult(query.value)
       if (current !== request) return
       orders.value = result.orders
       accounts.value = result.accounts
@@ -170,7 +250,8 @@
   const download = async () => {
     exporting.value = true
     try {
-      const blob = await exportDirectPaperResult(props.context)
+      if (queryError.value) return
+      const blob = await exportDirectPaperResult(query.value)
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
       link.download = `binance-paper-results.json`
@@ -183,7 +264,7 @@
     }
   }
 
-  watch(() => props.context, load, { immediate: true, deep: true })
+  watch([applied, queryError], load, { immediate: true })
 </script>
 
 <style scoped>

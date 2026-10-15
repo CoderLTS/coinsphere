@@ -1,6 +1,6 @@
 # CoinSphere 插件开发指南
 
-当前为 Core 5 / SDK 5 / manifest schemaVersion 1。插件继续是经过审查的可信 Go/Vue 源码目录，通过现有 CLI 安装、独立 migration、静态注册表与应用重建接入，无商店或运行时动态代码。安装版本与编译版本精确匹配才加载；插件同进程，SDK 不是恶意代码沙箱。
+当前为 Core 1.0.0 / SDK 1 / manifest schemaVersion 1。插件继续是经过审查的可信 Go/Vue 源码目录，通过现有 CLI 安装、独立 migration、静态注册表与应用重建接入，无商店或运行时动态代码。安装版本与编译版本精确匹配才加载；插件同进程，SDK 不是恶意代码沙箱。
 
 ## 清单与注册
 
@@ -38,7 +38,7 @@ Trigger 响应取消，通过 Emitter 发布事件。Loop 内真实节点引用�
 
 ResultPage.Resources 提取工作流/节点引用，ValidateScope 使用给定 tx 校验领域归属。ScopeSchema/FilterSchema 验证请求；Actions 与 RouteDescriptor.Action 必须匹配。结果写入在领域事务内调用 Revalidate，再校验状态与幂等；系统写操作通过 Host.Sessions.ValidateSession(ctx,tx)。不接受客户端 userId 替换身份。
 
-普通/结果页都进入导航页面目录。PluginMenuDescriptor 的 own/existing/direct 只提供空库首次布局建议；后续新增页面待用户挂载，不能在加载时修改用户菜单。稳定地址 /plugins/{id}/{page|result}/{key}，用户负责父级、标题、图标、排序及隐藏。菜单不建立生命周期引用，卸载时保留布局。
+普通/结果页都进入导航页面目录。空库首次初始化统一挂在“插件”一级目录下；PluginMenuDescriptor 保留插件声明，后续布局由用户管理，插件加载不能修改用户菜单。后续新增页面待用户挂载。稳定地址 /plugins/{id}/{page|result}/{key}，用户负责父级、标题、图标、排序及隐藏。菜单不建立生命周期引用，卸载时保留布局。
 
 ## Vue 贡献
 
@@ -47,9 +47,8 @@ ResultPage.Resources 提取工作流/节点引用，ValidateScope 使用给定 t
 | pages | PageDescriptor.pageKey，普通页面 |
 | headerActions | HeaderActionDescriptor.key，最小顶栏组件（AI chat） |
 | nodeEditors | NodeDescriptor.EditorKey；config/schema/uiSchema，emit update(key,value) |
-| runPanels | panelKey；result:{run,runNode} |
-| resultPages | pageKey；context:{pluginId,pageKey,scope,filters,allowedActions} |
-| resultConfigs | pageKey；v-model:scope/filters 和 scopeSchema/filterSchema |
+| runPanels | panelKey；result:{run,runNode,outputSchema?}；可复用前端 SDK schemaOutputFields 展示中文输出 |
+| resultPages | pageKey；context:{pluginId,pageKey,allowedActions}，页面自行管理筛选、查询、详情和导出 |
 | providerConfigComponents | 显式 provider key，调用方提供 pluginId |
 
 值为 () => import('./Component.vue')，按明确归属加载，缺插件/key/编译组件须显示错误，不遍历试加载。使用 frontend/src/components/workflow 通用 Schema 表单；业务页面保持 ArtDesignPro 主题、表格、弹窗和可访问交互，不从插件深层导入 Core views。

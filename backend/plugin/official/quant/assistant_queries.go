@@ -8,7 +8,7 @@ import (
 	"coinsphere/backend/plugin/sdk"
 )
 
-var quantAssistantQuerySchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"resource":{"type":"string","enum":["backtests","signals"]},"venue":{"type":"string","pattern":"^[a-z][a-z0-9_-]{1,31}$"},"market":{"type":"string","enum":["spot","usdm"]},"instrument":{"type":"string","pattern":"^[A-Z0-9]{2,32}$"},"status":{"type":"string","maxLength":32},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}},"required":["resource"],"additionalProperties":false}`)
+var quantAssistantQuerySchema = json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"resource":{"type":"string","enum":["backtests","signals"],"title":"资源类型","enumLabels":["回测","信号"]},"venue":{"type":"string","pattern":"^[a-z][a-z0-9_-]{1,31}$","title":"交易所"},"market":{"type":"string","enum":["spot","usdm"],"title":"市场","enumLabels":["现货","U 本位合约"]},"instrument":{"type":"string","pattern":"^[A-Z0-9]{2,32}$","title":"品种"},"status":{"type":"string","maxLength":32,"title":"状态"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20,"title":"显示条数"}},"required":["resource"],"additionalProperties":false}`)
 
 type assistantDomainQuery struct {
 	Resource   string `json:"resource"`
@@ -21,11 +21,11 @@ type assistantDomainQuery struct {
 
 func (q *quantRuntime) assistantQuery(ctx context.Context, input json.RawMessage, scope sdk.SystemScope) (json.RawMessage, error) {
 	if scope.PluginID != quantPluginID || scope.UserID <= 0 {
-		return nil, errors.New("invalid Quant assistant scope")
+		return nil, errors.New("量化助手查询范围无效")
 	}
 	var request assistantDomainQuery
 	if json.Unmarshal(input, &request) != nil {
-		return nil, errors.New("invalid Quant assistant query")
+		return nil, errors.New("量化助手查询无效")
 	}
 	request.Limit = assistantQueryLimit(request.Limit)
 
@@ -39,7 +39,7 @@ func (q *quantRuntime) assistantQuery(ctx context.Context, input json.RawMessage
 			TradeCount, CandleCount                  int
 		}
 		if request.Status != "" {
-			return nil, errors.New("status is not supported for Quant backtests")
+			return nil, errors.New("量化回测不支持此状态筛选")
 		}
 		query := sdk.ScopeWorkflows(q.db.WithContext(ctx), scope, "workflow_id").Model(&quantBacktest{}).Limit(request.Limit)
 		if request.Market != "" {
@@ -52,7 +52,7 @@ func (q *quantRuntime) assistantQuery(ctx context.Context, input json.RawMessage
 			query = query.Where("instrument = ?", request.Instrument)
 		}
 		if err := query.Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
-			return nil, errors.New("query Quant backtests failed")
+			return nil, errors.New("查询量化回测失败")
 		}
 		result = map[string]any{"items": rows}
 	case "signals":
@@ -74,11 +74,11 @@ func (q *quantRuntime) assistantQuery(ctx context.Context, input json.RawMessage
 			query = query.Where("status = ?", request.Status)
 		}
 		if err := query.Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
-			return nil, errors.New("query Quant signals failed")
+			return nil, errors.New("查询量化信号失败")
 		}
 		result = map[string]any{"items": rows}
 	default:
-		return nil, errors.New("unsupported Quant assistant resource")
+		return nil, errors.New("不支持此量化助手资源")
 	}
 	return json.Marshal(result)
 }

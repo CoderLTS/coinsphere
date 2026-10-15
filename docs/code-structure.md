@@ -1,6 +1,6 @@
 # CoinSphere 代码结构
 
-系统为个人 Go/Vue 模块化单体，Core 5 / SDK 5 / Graph 3；设计见[架构](architecture/overview.md)，语义见[契约](contracts/README.md)。
+系统为个人 Go/Vue 模块化单体，Core 1.0.0 / SDK 1 / Graph 3；设计见[架构](architecture/overview.md)，语义见[契约](contracts/README.md)。
 
 | 目录/文件 | 修改入口 |
 | --- | --- |

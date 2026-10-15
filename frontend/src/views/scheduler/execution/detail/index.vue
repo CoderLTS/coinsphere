@@ -7,6 +7,19 @@
         :title="error || run?.errorMessage || ''"
         :closable="false"
       />
+      <ElAlert
+        v-if="tasks.length"
+        type="warning"
+        :closable="false"
+        :title="'此运行有 ' + taskTotal + ' 项待审批'"
+        ><ElButton link type="primary" @click="inspectorVisible = true">打开审批面板</ElButton
+        ><ElButton
+          v-if="taskTotal > tasks.length"
+          link
+          @click="router.push({ path: '/scheduler/tasks', query: { runId: run?.id } })"
+          >查看全部待办</ElButton
+        ></ElAlert
+      >
       <div class="workflow-execution-detail__stage">
         <div
           class="workflow-execution-detail__body"
@@ -34,7 +47,11 @@
                     ><ElTag>{{ runStatusLabel(run?.status) }}</ElTag
                     ><ElTag type="info"
                       >{{ run?.entryPoint }} ·
-                      {{ run?.diagnostic ? '诊断重放' : run?.triggerType }}</ElTag
+                      {{
+                        run?.diagnostic
+                          ? '诊断重放'
+                          : triggerLabels[run?.triggerType || ''] || run?.triggerType
+                      }}</ElTag
                     ></div
                   >
                 </div>
@@ -42,17 +59,22 @@
                   <ElButton @click="load">刷新</ElButton>
                   <ElButton
                     v-if="run && ['queued', 'running', 'waiting', 'retrying'].includes(run.status)"
+                    :loading="acting === 'cancel'"
+                    :disabled="!!acting"
                     @click="action('cancel')"
                     >取消运行</ElButton
                   >
                   <ElButton
                     v-if="run && run.status === 'failed'"
-                    :disabled="run.errorCategory === 'unknown_result'"
+                    :loading="acting === 'retry'"
+                    :disabled="!!acting || run.errorCategory === 'unknown_result'"
                     @click="action('retry')"
                     >重试</ElButton
                   >
                   <ElButton
                     v-if="run && ['succeeded', 'failed', 'cancelled'].includes(run.status)"
+                    :loading="acting === 'replay'"
+                    :disabled="!!acting"
                     @click="action('replay')"
                     >诊断重放</ElButton
                   >
@@ -120,8 +142,16 @@
                     <p>{{ task.prompt }}</p
                     ><p>截止 {{ task.expiresAt }}</p>
                     <ElSpace
-                      ><ElButton type="primary" @click="decide(task.id, 'approve')">通过</ElButton
-                      ><ElButton type="danger" @click="decide(task.id, 'reject')"
+                      ><ElButton
+                        type="primary"
+                        :loading="deciding === task.id"
+                        :disabled="Boolean(deciding)"
+                        @click="decide(task.id, 'approve')"
+                        >通过</ElButton
+                      ><ElButton
+                        type="danger"
+                        :disabled="Boolean(deciding)"
+                        @click="decide(task.id, 'reject')"
                         >拒绝</ElButton
                       ></ElSpace
                     >
@@ -130,7 +160,11 @@
                 <ElTabs v-model="tab">
                   <ElTabPane label="概览" name="graph">
                     <ElDescriptions :column="1" border size="small"
-                      ><ElDescriptionsItem label="版本">#{{ run?.revisionId }}</ElDescriptionsItem
+                      ><ElDescriptionsItem label="工作流">{{
+                        run?.workflowName
+                      }}</ElDescriptionsItem
+                      ><ElDescriptionsItem label="版本"
+                        >v{{ run?.revisionNumber }}</ElDescriptionsItem
                       ><ElDescriptionsItem label="入口">{{ run?.entryPoint }}</ElDescriptionsItem
                       ><ElDescriptionsItem label="状态">{{
                         runStatusLabel(run?.status)
@@ -172,13 +206,30 @@
                           <pre>{{ JSON.stringify(selectedNode.inputSummary, null, 2) }}</pre>
                         </div></ElTabPane
                       ><ElTabPane label="输出"
-                        ><div class="workflow-execution-detail__json-block">
+                        ><ElDescriptions
+                          v-if="selectedOutput.length"
+                          :column="1"
+                          border
+                          size="small"
+                          ><ElDescriptionsItem
+                            v-for="field in selectedOutput"
+                            :key="field.key"
+                            :label="field.title"
+                            >{{ field.value }}</ElDescriptionsItem
+                          ></ElDescriptions
+                        >
+                        <details class="workflow-execution-detail__json-block"
+                          ><summary>原始 JSON</summary>
                           <pre>{{ JSON.stringify(selectedNode.outputSummary, null, 2) }}</pre>
-                        </div></ElTabPane
+                        </details></ElTabPane
                       ><ElTabPane v-for="panel in panels" :key="panel.id" :label="panel.title"
                         ><component
                           :is="panel.component"
-                          :result="{ run, runNode: selectedNode }" /></ElTabPane
+                          :result="{
+                            run,
+                            runNode: selectedNode,
+                            outputSchema: selectedDefinition?.outputSchema
+                          }" /></ElTabPane
                     ></ElTabs>
                   </ElTabPane>
                   <ElTabPane label="制品" name="artifacts"
@@ -186,7 +237,13 @@
                       ><ElTableColumn prop="nodeInstanceId" label="节点" /><ElTableColumn
                         label="下载"
                         ><template #default="{ row }"
-                          ><ElButton link @click="download(row)">下载制品</ElButton></template
+                          ><ElButton
+                            link
+                            :loading="downloading === row.sha256"
+                            :disabled="!!downloading"
+                            @click="download(row)"
+                            >下载制品</ElButton
+                          ></template
                         ></ElTableColumn
                       ></ElTable
                     ></ElTabPane
@@ -222,6 +279,8 @@
   import { fetchPluginCatalog, type PluginCatalogItem } from '@/api/pluginCatalog'
   import { loadPluginComponent } from '@/plugins'
   import { runStatusLabel } from '@/components/workflow/status'
+  import { schemaOutputFields } from '@/components/workflow/output-summary'
+  import { useMediaQuery } from '@vueuse/core'
   import WorkflowGraphCanvas from '@/components/workflow/WorkflowGraphCanvas.vue'
   const route = useRoute(),
     router = useRouter()
@@ -230,8 +289,29 @@
     definitions = ref<WorkflowNodeDefinition[]>([]),
     catalog = ref<PluginCatalogItem[]>([])
   const tasks = ref<WorkflowHumanTask[]>([]),
-    inspectorVisible = ref(true)
+    inspectorVisible = ref(!useMediaQuery('(max-width: 900px)').value)
+  const taskTotal = ref(0),
+    deciding = ref(0)
+  const triggerLabels: Record<string, string> = {
+    manual: '手动触发',
+    schedule: '定时触发',
+    event: '事件触发',
+    stream: '流式触发',
+    webhook: 'Webhook 触发',
+    failure: '失败触发'
+  }
+  const selectedDefinition = computed(() =>
+    definitions.value.find((item) => item.type === selectedNode.value?.nodeType)
+  )
+  const selectedOutput = computed(() =>
+    schemaOutputFields(
+      selectedDefinition.value?.outputSchema || {},
+      selectedNode.value?.outputSummary || {}
+    )
+  )
   const loading = ref(false),
+    acting = ref(''),
+    downloading = ref(''),
     error = ref(''),
     tab = ref('graph'),
     selectedNode = ref<WorkflowRunNode>(),
@@ -265,25 +345,43 @@
         definitions.value = nodes.items
         catalog.value = plugins.items
       }
-      const pending = (await fetchWorkflowHumanTasks()).items
+      const pending = await fetchWorkflowHumanTasks({
+        status: 'pending',
+        runId: current.id,
+        limit: 100
+      })
       if (request !== requestID) return
-      tasks.value = pending.filter((task) => task.runId === current.id)
+      tasks.value = pending.records
+      taskTotal.value = pending.total
       run.value = current
       if (selectedNode.value)
         selectedNode.value = current.runNodes.find((node) => node.id === selectedNode.value?.id)
       if (['queued', 'running', 'waiting', 'retrying'].includes(current.status))
         timer = setTimeout(load, 3000)
     } catch (cause: any) {
-      error.value = cause.message
+      if (request === requestID) error.value = cause.message
     } finally {
       if (request === requestID) loading.value = false
     }
   }
   const action = async (action: 'cancel' | 'retry' | 'replay') => {
-    if (!run.value) return
-    const result = await applyWorkflowRunAction(run.value.id, action)
-    if (result.id !== run.value.id) await router.push(`/scheduler/execution/${result.id}/detail`)
-    else await load()
+    if (
+      !run.value ||
+      acting.value ||
+      (action === 'retry' && run.value.errorCategory === 'unknown_result')
+    )
+      return
+    acting.value = action
+    error.value = ''
+    try {
+      const result = await applyWorkflowRunAction(run.value.id, action)
+      if (result.id !== run.value.id) await router.push(`/scheduler/execution/${result.id}/detail`)
+      else await load()
+    } catch (cause: any) {
+      error.value = cause.message
+    } finally {
+      acting.value = ''
+    }
   }
   let panelRequest = 0
   const selectAttempt = async (node: WorkflowRunNode) => {
@@ -323,31 +421,54 @@
     if (node) void selectAttempt(node)
   }
   const decide = async (id: number, action: 'approve' | 'reject') => {
+    if (deciding.value) return
     try {
       await ElMessageBox.confirm(`${action === 'approve' ? '通过' : '拒绝'}此待办？`, '处理待办', {
         confirmButtonText: '确定',
         cancelButtonText: '取消'
       })
+    } catch {
+      return
+    }
+    deciding.value = id
+    try {
       await decideWorkflowHumanTask(id, action)
       await load()
     } catch (cause: any) {
-      if (cause !== 'cancel' && cause !== 'close') error.value = cause.message
+      await load()
+      error.value = cause.message + '；待办已刷新，请确认当前状态'
+    } finally {
+      deciding.value = 0
     }
   }
   const download = async (artifact: WorkflowArtifact) => {
-    const blob = await downloadWorkflowArtifact(artifact.downloadUrl)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = artifact.sha256
-    link.click()
-    URL.revokeObjectURL(url)
+    if (downloading.value) return
+    downloading.value = artifact.sha256
+    try {
+      const blob = await downloadWorkflowArtifact(artifact.downloadUrl)
+      const url = URL.createObjectURL(blob)
+      try {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = artifact.sha256
+        link.click()
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    } catch (cause: any) {
+      error.value = cause.message
+    } finally {
+      downloading.value = ''
+    }
   }
   watch(
     () => route.params.executionId,
     () => {
       run.value = undefined
       revision.value = undefined
+      tasks.value = []
+      taskTotal.value = 0
+      clearSelection()
       void load()
     },
     { immediate: true }

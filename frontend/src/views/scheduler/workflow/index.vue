@@ -7,7 +7,7 @@
       @search="search"
       @reset="reset"
     />
-    <ElCard class="art-table-card">
+    <ElCard v-loading="mutating" class="art-table-card">
       <div class="workflow-library">
         <aside class="workflow-groups" aria-label="工作流分组">
           <div class="workflow-groups__header"
@@ -91,7 +91,13 @@
                   <ElButton>移至分组（{{ selected.length }}）</ElButton>
                   <template #dropdown
                     ><ElDropdownMenu
-                      ><ElDropdownItem :command="0">未分组</ElDropdownItem>
+                      ><ElDropdownItem :command="0">未分组</ElDropdownItem
+                      ><ElDropdownItem
+                        v-for="group in groups"
+                        :key="group.id"
+                        :command="group.id"
+                        >{{ group.name }}</ElDropdownItem
+                      >
                     </ElDropdownMenu></template
                   >
                 </ElDropdown>
@@ -129,19 +135,28 @@
             >
             <ElTableColumn label="版本" min-width="180"
               ><template #default="{ row }"
-                >草稿 #{{ row.draftRevisionId }}<br />已发布
-                {{ row.publishedRevisionId ? '#' + row.publishedRevisionId : '暂无' }}</template
+                >草稿 {{ row.draftRevisionNumber ? 'v' + row.draftRevisionNumber : '—'
+                }}<br />已发布
+                {{
+                  row.publishedRevisionNumber ? 'v' + row.publishedRevisionNumber : '暂无'
+                }}</template
               ></ElTableColumn
             >
-            <ElTableColumn label="最近运行" min-width="120"
+            <ElTableColumn label="最近运行" min-width="170"
               ><template #default="{ row }"
-                ><ElButton
-                  v-if="row.latestRunId"
-                  link
-                  @click="router.push(`/scheduler/execution/${row.latestRunId}/detail`)"
-                  >{{ runStatusLabel(row.latestRunStatus) }}</ElButton
+                ><div v-if="row.latestRunId" class="latest-run"
+                  ><ElButton
+                    link
+                    @click="router.push(`/scheduler/execution/${row.latestRunId}/detail`)"
+                    >{{ runStatusLabel(row.latestRunStatus) }}</ElButton
+                  ><small>{{ formatDateTime(row.latestRunTriggeredAt) }}</small></div
                 ><span v-else>暂无运行</span></template
               ></ElTableColumn
+            >
+            <ElTableColumn label="更新时间" min-width="170"
+              ><template #default="{ row }">{{
+                formatDateTime(row.updatedAt)
+              }}</template></ElTableColumn
             >
             <ElTableColumn label="分组" min-width="140"
               ><template #default="{ row }"
@@ -164,7 +179,16 @@
                       router.push({ path: '/scheduler/execution', query: { workflowId: row.id } })
                     "
                     >历史运行</ElButton
-                  ><ElButton link type="danger" @click="remove(row)">删除</ElButton></ElSpace
+                  ><ElDropdown @command="workflowCommand($event, row)"
+                    ><ElButton link>更多</ElButton
+                    ><template #dropdown
+                      ><ElDropdownMenu
+                        ><ElDropdownItem command="delete" divided
+                          >删除工作流</ElDropdownItem
+                        ></ElDropdownMenu
+                      ></template
+                    ></ElDropdown
+                  ></ElSpace
                 ></template
               ></ElTableColumn
             >
@@ -223,8 +247,12 @@
     type WorkflowGroup
   } from '@/api/workflows'
   import { runStatusLabel } from '@/components/workflow/status'
-  const router = useRouter()
+  import { formatDateTime } from '@/utils/date'
+  import { readRouteFilters } from '@/hooks/core/useRouteFilters'
+  const route = useRoute(),
+    router = useRouter()
   const loading = ref(false),
+    mutating = ref(false),
     creating = ref(false),
     error = ref(''),
     groups = ref<WorkflowGroup[]>([]),
@@ -270,35 +298,58 @@
     Object.assign(filters, { keyword: '', status: '', groupId: undefined })
     search()
   }
-  const moveSelected = async (id: number) => {
-    await assignWorkflowGroup(
-      selected.value.map((item) => item.id),
-      id || null
-    )
-    await load()
+  const syncFiltersToURL = () => {
+    const query = { ...route.query }
+    for (const key of ['keyword', 'status', 'groupId']) delete query[key]
+    if (filters.keyword) query.keyword = filters.keyword
+    if (filters.status) query.status = filters.status
+    if (filters.groupId !== undefined) query.groupId = String(filters.groupId)
+    return router.replace({ query })
   }
+  const change = async (operation: () => Promise<void>) => {
+    if (mutating.value || ordering.value) return
+    mutating.value = true
+    error.value = ''
+    try {
+      await operation()
+    } catch (cause: any) {
+      if (cause !== 'cancel' && cause !== 'close') error.value = cause.message
+    } finally {
+      mutating.value = false
+    }
+  }
+  const moveSelected = (id: number) =>
+    change(async () => {
+      await assignWorkflowGroup(
+        selected.value.map((item) => item.id),
+        id || null
+      )
+      await load()
+    })
   const statusLabels: Record<string, string> = {
     inactive: '未启用',
     active: '已启用',
     error: '异常'
   }
+  let requestSequence = 0
   const load = async () => {
+    const request = ++requestSequence
     loading.value = true
     selected.value = []
     error.value = ''
     try {
-      page.value = await fetchWorkflows({ ...applied, cursor: cursor.value, limit: 20 })
+      const result = await fetchWorkflows({ ...applied, cursor: cursor.value, limit: 20 })
+      if (request === requestSequence) page.value = result
     } catch (cause: any) {
-      error.value = cause.message
+      if (request === requestSequence) error.value = cause.message
     } finally {
-      loading.value = false
+      if (request === requestSequence) loading.value = false
     }
   }
-  const search = () => {
-    Object.assign(applied, filters)
-    cursor.value = ''
-    cursors.value = []
-    void load()
+  const search = async () => {
+    const previous = route.fullPath
+    await syncFiltersToURL()
+    if (route.fullPath === previous) applyQuery(route.query)
   }
   const next = () => {
     cursors.value.push(cursor.value)
@@ -309,33 +360,44 @@
     cursor.value = cursors.value.pop() || ''
     void load()
   }
-  const move = async (row: WorkflowSummary, id: number) => {
-    await assignWorkflowGroup([row.id], id || null)
-    await load()
-  }
-  const lifecycle = async (row: WorkflowSummary) => {
-    const action = row.status === 'active' ? 'deactivate' : 'activate'
-    await ElMessageBox.confirm(
-      `${action === 'activate' ? '启用' : '停用'}“${row.name}”？`,
-      '工作流状态'
-    )
-    await applyWorkflowLifecycle(row.id, action)
-    await load()
-  }
-  const remove = async (row: WorkflowSummary) => {
-    await ElMessageBox.confirm(`删除“${row.name}”及其版本和运行记录？`, '删除工作流', {
-      type: 'warning'
+  const move = (row: WorkflowSummary, id: number) =>
+    change(async () => {
+      await assignWorkflowGroup([row.id], id || null)
+      await load()
     })
-    await deleteWorkflow(row.id)
-    await load()
+  const lifecycle = (row: WorkflowSummary) =>
+    change(async () => {
+      const action = row.status === 'active' ? 'deactivate' : 'activate'
+      await ElMessageBox.confirm(
+        `${action === 'activate' ? '启用' : '停用'}“${row.name}”？`,
+        '工作流状态'
+      )
+      await applyWorkflowLifecycle(row.id, action)
+      await load()
+    })
+  const remove = (row: WorkflowSummary) =>
+    change(async () => {
+      await ElMessageBox.confirm(`删除“${row.name}”及其版本和运行记录？`, '删除工作流', {
+        type: 'warning'
+      })
+      await deleteWorkflow(row.id)
+      await load()
+    })
+  const workflowCommand = (command: string, row: WorkflowSummary) => {
+    if (command === 'delete') void remove(row)
   }
   const createVisible = ref(false),
     createForm = reactive({ name: '', templateKey: 'blank' })
   const openCreate = async () => {
-    templates.value = (await fetchWorkflowTemplates()).items
-    createVisible.value = true
+    try {
+      templates.value = (await fetchWorkflowTemplates()).items
+      createVisible.value = true
+    } catch (cause: any) {
+      error.value = cause.message
+    }
   }
   const create = async () => {
+    if (creating.value) return
     if (!createForm.name.trim()) {
       ElMessage.warning('请输入名称')
       return
@@ -349,6 +411,9 @@
       })
       createVisible.value = false
       await router.push(`/scheduler/workflow/${row.id}/edit`)
+    } catch (cause: any) {
+      error.value = cause.message
+      ElMessage.error(cause.message)
     } finally {
       creating.value = false
     }
@@ -363,28 +428,36 @@
   const refreshGroups = async () => {
     groups.value = (await fetchWorkflowGroups()).items
   }
-  const addGroup = async () => {
-    await createWorkflowGroup(await namePrompt('新建分组'))
-    await refreshGroups()
-  }
-  const renameGroup = async (group: WorkflowGroup) => {
-    await updateWorkflowGroup(group.id, await namePrompt('重命名分组', group.name))
-    await refreshGroups()
-  }
-  const removeGroup = async (group: WorkflowGroup) => {
-    await ElMessageBox.confirm('删除分组后工作流移至未分组', '删除分组')
-    await deleteWorkflowGroup(group.id)
-    await refreshGroups()
-    if (filters.groupId === group.id) filters.groupId = undefined
-    search()
-  }
+  const addGroup = () =>
+    change(async () => {
+      await createWorkflowGroup(await namePrompt('新建分组'))
+      await refreshGroups()
+    })
+  const renameGroup = (group: WorkflowGroup) =>
+    change(async () => {
+      await updateWorkflowGroup(group.id, await namePrompt('重命名分组', group.name))
+      await refreshGroups()
+    })
+  const removeGroup = (group: WorkflowGroup) =>
+    change(async () => {
+      await ElMessageBox.confirm('删除分组后工作流移至未分组', '删除分组')
+      await deleteWorkflowGroup(group.id)
+      await refreshGroups()
+      if (filters.groupId === group.id) filters.groupId = undefined
+      await search()
+    })
   const persistGroupOrder = async () => {
+    if (ordering.value || mutating.value) return
     ordering.value = true
     try {
       groups.value = (await updateWorkflowGroupOrder(groups.value.map((group) => group.id))).items
     } catch (cause: any) {
       error.value = cause.message
-      await refreshGroups()
+      try {
+        await refreshGroups()
+      } catch (cause: any) {
+        error.value = cause.message
+      }
     } finally {
       ordering.value = false
     }
@@ -399,8 +472,29 @@
       await persistGroupOrder()
     }
   }
+  const applyQuery = (query: Record<string, unknown>) => {
+    try {
+      const values = readRouteFilters({ keyword: '', status: '', groupId: 0 }, query)
+      const next = { ...values, groupId: query.groupId === undefined ? undefined : values.groupId }
+      Object.assign(filters, next)
+      Object.assign(applied, next)
+      cursor.value = ''
+      cursors.value = []
+      void load()
+    } catch (cause: any) {
+      ++requestSequence
+      loading.value = false
+      error.value = cause.message
+      page.value = { records: [], total: 0, hasMore: false, nextCursor: '' }
+    }
+  }
+  watch(() => route.query, applyQuery, { immediate: true })
   onMounted(async () => {
-    await Promise.all([refreshGroups(), load()])
+    try {
+      await refreshGroups()
+    } catch (cause: any) {
+      error.value = cause.message
+    }
   })
 </script>
 <style scoped lang="scss">
@@ -554,6 +648,16 @@
     margin: 4px 0;
     color: var(--el-text-color-secondary);
     font-size: 12px;
+  }
+  .latest-run {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 18px;
+  }
+  .latest-run small {
+    color: var(--el-text-color-secondary);
+    font-size: 11px;
   }
   .page-footer {
     display: flex;

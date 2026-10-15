@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,7 @@ func (s *Server) handlePublishWorkflowWebhook(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxWorkflowEventRequestBytes)
 	payload, err := decodeBody[json.RawMessage](c)
 	if err != nil || payload == nil {
-		writeProblem(c, http.StatusBadRequest, "webhook body must be a JSON object no larger than 1 MiB")
+		writeProblem(c, http.StatusBadRequest, "Webhook 请求体须为不超过 1 MiB 的 JSON 对象")
 		return
 	}
 	data, err := s.App.PublishWorkflowWebhook(c.Request.Context(), workflowID, c.Request, *payload)
@@ -37,12 +38,12 @@ func (s *Server) handlePublishWorkflowEvent(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	raw, err := decodeBody[json.RawMessage](c)
 	if err != nil || len(*raw) > 1<<20 {
-		writeProblem(c, http.StatusBadRequest, "CloudEvent must be a JSON object no larger than 1 MiB")
+		writeProblem(c, http.StatusBadRequest, "CloudEvent 须为不超过 1 MiB 的 JSON 对象")
 		return
 	}
 	var event cloudevents.Event
 	if json.Unmarshal(*raw, &event) != nil {
-		writeProblem(c, http.StatusBadRequest, "CloudEvent is invalid")
+		writeProblem(c, http.StatusBadRequest, "CloudEvent 无效")
 		return
 	}
 	data, err := s.App.PublishWorkflowEvent(c.Request.Context(), event)
@@ -50,8 +51,38 @@ func (s *Server) handlePublishWorkflowEvent(c *gin.Context) {
 }
 
 func (s *Server) handleListWorkflowHumanTasks(c *gin.Context) {
-	data, err := s.App.ListWorkflowHumanTasks(c.Request.Context(), queryStr(c, "status"))
-	respond(c, M{"items": data}, err, "")
+	page, ok := cursorPage(c)
+	if !ok {
+		return
+	}
+	workflowID, err := optionalWorkflowQueryID(c, "workflowId")
+	if err != nil {
+		writeProblem(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	runID, err := optionalWorkflowQueryID(c, "runId")
+	if err != nil {
+		writeProblem(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	data, err := s.App.PageWorkflowHumanTasks(c.Request.Context(), service.WorkflowHumanTaskQuery{Page: page, Status: queryStr(c, "status"), WorkflowID: workflowID, RunID: runID})
+	respond(c, data, err, "")
+}
+
+func optionalWorkflowQueryID(c *gin.Context, key string) (int64, error) {
+	values, present := c.GetQueryArray(key)
+	if !present {
+		return 0, nil
+	}
+	if len(values) != 1 {
+		return 0, fmt.Errorf("%s 必须是单个正整数", key)
+	}
+	raw := values[0]
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s 必须是正整数", key)
+	}
+	return value, nil
 }
 
 func (s *Server) handleDecideWorkflowHumanTask(c *gin.Context) {
@@ -150,7 +181,11 @@ func (s *Server) handleValidateWorkflowGraph(c *gin.Context) {
 		return
 	}
 	if err := s.App.ValidateWorkflowGraph(payload.Graph); err != nil {
-		ok(c, M{"valid": false, "issues": []M{{"scope": "graph", "level": "error", "message": err.Error()}}})
+		var issue *service.WorkflowValidationIssue
+		if !errors.As(err, &issue) {
+			issue = &service.WorkflowValidationIssue{Scope: "graph", Level: "error", Code: "graph.invalid", Message: err.Error()}
+		}
+		ok(c, M{"valid": false, "issues": []*service.WorkflowValidationIssue{issue}})
 		return
 	}
 	ok(c, M{"valid": true, "issues": []M{}})
@@ -283,7 +318,10 @@ func (s *Server) handleWorkflowLifecycle(c *gin.Context) {
 }
 
 func (s *Server) handleListWorkflowRuns(c *gin.Context) {
-	workflowID, err := pathInt64(c, "workflowId")
+	workflowID, err := optionalWorkflowQueryID(c, "workflowId")
+	if c.Param("workflowId") != "" {
+		workflowID, err = pathInt64(c, "workflowId")
+	}
 	if err != nil {
 		writeProblem(c, http.StatusBadRequest, err.Error())
 		return
@@ -295,7 +333,7 @@ func (s *Server) handleListWorkflowRuns(c *gin.Context) {
 	triggerType := queryStr(c, "triggerType")
 	if triggerType != "" && triggerType != "manual" && triggerType != "schedule" && triggerType != "event" &&
 		triggerType != "stream" && triggerType != "webhook" && triggerType != "failure" {
-		writeProblem(c, http.StatusBadRequest, "invalid workflow run triggerType")
+		writeProblem(c, http.StatusBadRequest, "工作流运行触发方式无效")
 		return
 	}
 	status := queryStr(c, "status")
@@ -307,7 +345,7 @@ func (s *Server) handleListWorkflowRuns(c *gin.Context) {
 	if status != "" {
 		mapped, valid := statusMap[status]
 		if !valid {
-			writeProblem(c, http.StatusBadRequest, "invalid workflow run status")
+			writeProblem(c, http.StatusBadRequest, "工作流运行状态无效")
 			return
 		}
 		status = mapped
@@ -323,12 +361,12 @@ func (s *Server) handleListWorkflowRuns(c *gin.Context) {
 		return
 	}
 	if from != nil && to != nil && from.After(*to) {
-		writeProblem(c, http.StatusBadRequest, "from must not be after to")
+		writeProblem(c, http.StatusBadRequest, "开始时间不能晚于结束时间")
 		return
 	}
 	keyword := queryStr(c, "keyword")
 	if len(keyword) > 200 {
-		writeProblem(c, http.StatusBadRequest, "keyword must not exceed 200 bytes")
+		writeProblem(c, http.StatusBadRequest, "关键词不能超过 200 字节")
 		return
 	}
 	data, err := s.App.PageWorkflowRuns(c.Request.Context(), workflowID, service.WorkflowRunListQuery{
@@ -379,11 +417,11 @@ func workflowRunQueryTime(c *gin.Context, name string) (*time.Time, error) {
 	}
 	value, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s must be an RFC3339 UTC time", name)
+		return nil, fmt.Errorf("%s 须为 RFC3339 格式的 UTC 时间", name)
 	}
 	_, offset := value.Zone()
 	if offset != 0 {
-		return nil, fmt.Errorf("%s must be UTC", name)
+		return nil, fmt.Errorf("%s 须使用 UTC 时间", name)
 	}
 	value = value.UTC()
 	return &value, nil

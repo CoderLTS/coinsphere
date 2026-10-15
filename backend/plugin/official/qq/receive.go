@@ -25,9 +25,9 @@ const (
 )
 
 var (
-	errQQReconnect        = errors.New("QQ gateway requested reconnect")
-	errQQInvalidSession   = errors.New("QQ gateway session is invalid")
-	errQQPermanentGateway = errors.New("permanent QQ gateway failure")
+	errQQReconnect        = errors.New("QQ 网关要求重新连接")
+	errQQInvalidSession   = errors.New("QQ 网关会话无效")
+	errQQPermanentGateway = errors.New("QQ 网关发生不可重试的错误")
 )
 
 type qqReceiveTrigger struct{ runtime *qqRuntime }
@@ -75,7 +75,7 @@ func (t qqReceiveTrigger) Run(ctx context.Context, request sdk.TriggerRequest, e
 		return err
 	}
 	if !t.runtime.acquireReceiver(credentials.AppID) {
-		return errors.New("QQ receiver for this AppID is already active")
+		return errors.New("此应用编号的 QQ 接收器已经启用")
 	}
 	defer t.runtime.releaseReceiver(credentials.AppID)
 
@@ -133,7 +133,7 @@ func (q *qqRuntime) runGateway(ctx context.Context, emitter sdk.Emitter, credent
 	token, category, err := q.accessToken(ctx, credentials)
 	if err != nil {
 		if category == "authentication" {
-			return false, fmt.Errorf("%w: authentication", errQQPermanentGateway)
+			return false, fmt.Errorf("%w：认证失败", errQQPermanentGateway)
 		}
 		return false, err
 	}
@@ -152,7 +152,7 @@ func (q *qqRuntime) runGateway(ctx context.Context, emitter sdk.Emitter, credent
 	}
 	if err != nil {
 		if safehttp.PermanentWebSocketStatus(status) {
-			return false, fmt.Errorf("%w: status %d", errQQPermanentGateway, status)
+			return false, fmt.Errorf("%w：状态码 %d", errQQPermanentGateway, status)
 		}
 		return false, err
 	}
@@ -164,13 +164,13 @@ func (q *qqRuntime) runGateway(ctx context.Context, emitter sdk.Emitter, credent
 
 	var hello qqGatewayPayload
 	if err := connection.ReadJSON(&hello); err != nil || hello.Op != 10 {
-		return false, errors.New("QQ gateway hello is invalid")
+		return false, errors.New("QQ 网关握手消息无效")
 	}
 	var helloData struct {
 		HeartbeatInterval int `json:"heartbeat_interval"`
 	}
 	if json.Unmarshal(hello.D, &helloData) != nil || helloData.HeartbeatInterval < 1000 || helloData.HeartbeatInterval > 5*60*1000 {
-		return false, errors.New("QQ gateway heartbeat interval is invalid")
+		return false, errors.New("QQ 网关心跳间隔无效")
 	}
 	err = connection.WriteJSON(qqGatewayAuthentication(token, session))
 	if err != nil {
@@ -201,7 +201,7 @@ func (q *qqRuntime) runGateway(ctx context.Context, emitter sdk.Emitter, credent
 					SessionID string `json:"session_id"`
 				}
 				if json.Unmarshal(payload.D, &data) != nil || strings.TrimSpace(data.SessionID) == "" || len(data.SessionID) > 256 {
-					return ready, errors.New("QQ gateway ready event is invalid")
+					return ready, errors.New("QQ 网关就绪事件无效")
 				}
 				session.ID = strings.TrimSpace(data.SessionID)
 				ready = true
@@ -287,19 +287,19 @@ func (q *qqRuntime) gatewayURL(ctx context.Context, appID, token string) (*url.U
 	}
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
-			return nil, fmt.Errorf("%w: authentication", errQQPermanentGateway)
+			return nil, fmt.Errorf("%w：认证失败", errQQPermanentGateway)
 		}
-		return nil, errors.New("QQ gateway endpoint request rejected")
+		return nil, errors.New("QQ 网关地址请求被拒绝")
 	}
 	var result struct {
 		URL string `json:"url"`
 	}
 	if json.Unmarshal(raw, &result) != nil {
-		return nil, errors.New("decode QQ gateway endpoint")
+		return nil, errors.New("解析 QQ 网关地址失败")
 	}
 	target, err := url.ParseRequestURI(strings.TrimSpace(result.URL))
 	if err != nil || !target.IsAbs() || target.Scheme != "wss" || !isQQGatewayHost(target.Hostname()) {
-		return nil, errors.New("QQ gateway endpoint is invalid")
+		return nil, errors.New("QQ 网关地址无效")
 	}
 	if err := q.http.ValidateWebSocketURL(ctx, target, false); err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func qqGatewayReadError(err error) error {
 	case 4900, 4901, 4902, 4903, 4904, 4905, 4906, 4907, 4908, 4909, 4910, 4911, 4912, 4913:
 		return errQQInvalidSession
 	case 4001, 4002, 4003, 4004, 4005, 4010, 4011, 4012, 4013, 4014, 4914, 4915:
-		return fmt.Errorf("%w: close code %d", errQQPermanentGateway, closeError.Code)
+		return fmt.Errorf("%w：关闭代码 %d", errQQPermanentGateway, closeError.Code)
 	default:
 		return err
 	}
@@ -331,7 +331,7 @@ func qqGatewayReadError(err error) error {
 func emitQQMessage(ctx context.Context, emitter sdk.Emitter, appID, eventType string, raw json.RawMessage) error {
 	var message qqIncomingMessage
 	if json.Unmarshal(raw, &message) != nil {
-		return errors.New("decode QQ message event")
+		return errors.New("解析 QQ 消息事件失败")
 	}
 	data, eventTime, partitionKey, err := normalizeQQMessage(eventType, message)
 	if err != nil {
@@ -344,7 +344,7 @@ func emitQQMessage(ctx context.Context, emitter sdk.Emitter, appID, eventType st
 	event.SetTime(eventTime)
 	event.SetExtension("partitionkey", partitionKey)
 	if err := event.SetData(cloudevents.ApplicationJSON, data); err != nil {
-		return errors.New("encode QQ message event")
+		return errors.New("编码 QQ 消息事件失败")
 	}
 	return emitter.Emit(ctx, event)
 }
@@ -355,25 +355,25 @@ func normalizeQQMessage(eventType string, message qqIncomingMessage) (map[string
 	message.Author.UserOpenID = strings.TrimSpace(message.Author.UserOpenID)
 	message.Author.MemberOpenID = strings.TrimSpace(message.Author.MemberOpenID)
 	if message.ID == "" || len(message.ID) > 128 || utf8.RuneCountInString(message.Content) > 32768 {
-		return nil, time.Time{}, "", errors.New("QQ message identity or content is invalid")
+		return nil, time.Time{}, "", errors.New("QQ 消息标识或内容无效")
 	}
 	eventTime, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(message.Timestamp))
 	if err != nil {
-		return nil, time.Time{}, "", errors.New("QQ message timestamp is invalid")
+		return nil, time.Time{}, "", errors.New("QQ 消息时间戳无效")
 	}
 	targetType, targetID, senderID := "user", message.Author.UserOpenID, message.Author.UserOpenID
 	if eventType == "GROUP_AT_MESSAGE_CREATE" {
 		targetType, targetID, senderID = "group", message.GroupOpenID, message.Author.MemberOpenID
 	} else if eventType != "C2C_MESSAGE_CREATE" {
-		return nil, time.Time{}, "", errors.New("QQ message event type is unsupported")
+		return nil, time.Time{}, "", errors.New("不支持此 QQ 消息事件类型")
 	}
 	if targetID == "" || senderID == "" || len(targetID) > 128 || len(senderID) > 128 {
-		return nil, time.Time{}, "", errors.New("QQ message target is invalid")
+		return nil, time.Time{}, "", errors.New("QQ 消息目标无效")
 	}
 	messageIndex, referencedIndex := qqMessageIndices(message.MessageScene.Ext)
 	attachments := make([]map[string]any, 0, len(message.Attachments))
 	if len(message.Attachments) > 100 {
-		return nil, time.Time{}, "", errors.New("QQ message has too many attachments")
+		return nil, time.Time{}, "", errors.New("QQ 消息附件数量超过上限")
 	}
 	for _, attachment := range message.Attachments {
 		item, err := normalizeQQAttachment(attachment)
@@ -432,7 +432,7 @@ func normalizeQQAttachment(attachment struct {
 	if len(attachment.URL) > 4096 || utf8.RuneCountInString(attachment.Filename) > 255 ||
 		len(attachment.ContentType) > 128 || len(attachment.VoiceWavURL) > 4096 ||
 		utf8.RuneCountInString(attachment.ASRReferText) > 32768 || attachment.Size < 0 || attachment.Width < 0 || attachment.Height < 0 {
-		return nil, errors.New("QQ message attachment is invalid")
+		return nil, errors.New("QQ 消息附件无效")
 	}
 	item := map[string]any{
 		"url": attachment.URL, "filename": attachment.Filename, "contentType": attachment.ContentType, "size": attachment.Size,

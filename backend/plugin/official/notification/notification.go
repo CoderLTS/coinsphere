@@ -59,20 +59,20 @@ func (n *notificationRuntime) register(registrar sdk.Registrar) error {
 	descriptors := []sdk.NodeDescriptor{
 		{
 			Type: "official.notification.in_app", Version: "1.0.0", Kind: sdk.NodeKindAction,
-			Title: "站内通知", Description: "向个人账号发送站内通知", Category: "notification", Aliases: []string{"站内消息", "通知提醒"}, Tags: []string{"通知", "个人"}, SortOrder: 10, Color: "#7c3aed", Icon: "bell", Width: 220, Height: 72,
+			Title: "站内通知", Description: "向个人账号发送站内通知", Category: "notification", CategoryTitle: "通知", Aliases: []string{"站内消息", "通知提醒"}, Tags: []string{"通知", "个人"}, SortOrder: 10, Color: "#7c3aed", Icon: "bell", Width: 220, Height: 72,
 			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"title":{"type":"string","title":"通知标题","minLength":1,"maxLength":160}},"required":["title"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["title"]}`),
 		},
 		{
 			Type: "official.notification.dingtalk", Version: "1.0.0", Kind: sdk.NodeKindAction,
-			Title: "钉钉通知", Description: "通过钉钉机器人发送通知", Category: "notification", Aliases: []string{"钉钉消息", "DingTalk"}, Tags: []string{"通知", "钉钉", "机器人"}, SortOrder: 20, Color: "#2563eb", Icon: "message-circle", Width: 220, Height: 72,
-			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"title":{"type":"string","title":"通知标题","minLength":1,"maxLength":160},"format":{"type":"string","title":"消息格式","enum":["text","markdown"],"enumLabels":["纯文本","Markdown 文本"],"default":"markdown"},"signed":{"type":"boolean","title":"启用加签","default":false},"accessToken":{"type":"string","title":"访问令牌","x-coinsphere-secret":true},"signingSecret":{"type":"string","title":"签名密钥","x-coinsphere-secret":true}},"required":["title","format","signed","accessToken"],"additionalProperties":false}`),
+			Title: "钉钉通知", Description: "通过钉钉机器人发送通知", Category: "notification", CategoryTitle: "通知", Aliases: []string{"钉钉消息", "DingTalk"}, Tags: []string{"通知", "钉钉", "机器人"}, SortOrder: 20, Color: "#2563eb", Icon: "message-circle", Width: 220, Height: 72,
+			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"title":{"type":"string","title":"通知标题","minLength":1,"maxLength":160},"format":{"type":"string","title":"消息格式","enum":["text","markdown"],"enumLabels":["纯文本","Markdown 文本"],"default":"markdown"},"signed":{"type":"boolean","title":"启用加签","default":false},"accessToken":{"type":"string","title":"访问令牌","x-coinsphere-secret":true,"description":"仅保存加密值；留空保持原有凭据。"},"signingSecret":{"type":"string","title":"签名密钥","x-coinsphere-secret":true,"description":"仅保存加密值；留空保持原有凭据。"}},"required":["title","format","signed","accessToken"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["title","format","signed","accessToken","signingSecret"]}`),
 		},
 		{
 			Type: "official.notification.smtp", Version: "1.0.0", Kind: sdk.NodeKindAction,
-			Title: "邮件通知", Description: "通过 TLS SMTP 发送邮件通知", Category: "notification", Aliases: []string{"邮件", "SMTP"}, Tags: []string{"通知", "邮件", "SMTP"}, SortOrder: 30, Color: "#15803d", Icon: "mail", Width: 220, Height: 72,
-			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"title":{"type":"string","title":"邮件主题","minLength":1,"maxLength":160},"host":{"type":"string","title":"SMTP 公网域名","minLength":1,"maxLength":253},"port":{"type":"integer","title":"端口","minimum":1,"maximum":65535,"default":465},"security":{"type":"string","title":"连接安全","enum":["implicit_tls","starttls"],"enumLabels":["TLS","STARTTLS"],"default":"implicit_tls"},"username":{"type":"string","title":"用户名","minLength":1,"maxLength":320},"fromEmail":{"type":"string","title":"发件邮箱","format":"email","maxLength":320},"fromName":{"type":"string","title":"发件名称","maxLength":160},"recipients":{"type":"array","title":"收件人","minItems":1,"maxItems":100,"uniqueItems":true,"items":{"type":"string","format":"email","maxLength":320}},"password":{"type":"string","title":"密码","x-coinsphere-secret":true}},"required":["title","host","port","security","username","fromEmail","recipients","password"],"additionalProperties":false}`),
+			Title: "邮件通知", Description: "通过 TLS SMTP 发送邮件通知", Category: "notification", CategoryTitle: "通知", Aliases: []string{"邮件", "SMTP"}, Tags: []string{"通知", "邮件", "SMTP"}, SortOrder: 30, Color: "#15803d", Icon: "mail", Width: 220, Height: 72,
+			ConfigSchema: json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"title":{"type":"string","title":"邮件主题","minLength":1,"maxLength":160},"host":{"type":"string","title":"SMTP 公网域名","minLength":1,"maxLength":253},"port":{"type":"integer","title":"端口","minimum":1,"maximum":65535,"default":465},"security":{"type":"string","title":"连接安全","enum":["implicit_tls","starttls"],"enumLabels":["TLS","STARTTLS"],"default":"implicit_tls"},"username":{"type":"string","title":"用户名","minLength":1,"maxLength":320},"fromEmail":{"type":"string","title":"发件邮箱","format":"email","maxLength":320},"fromName":{"type":"string","title":"发件名称","maxLength":160},"recipients":{"type":"array","title":"收件人","minItems":1,"maxItems":100,"uniqueItems":true,"items":{"type":"string","format":"email","maxLength":320}},"password":{"type":"string","title":"密码","x-coinsphere-secret":true,"description":"仅保存加密值；留空保持原有凭据。"}},"required":["title","host","port","security","username","fromEmail","recipients","password"],"additionalProperties":false}`),
 			UISchema:     json.RawMessage(`{"ui:order":["title","host","port","security","username","fromEmail","fromName","recipients","password"]}`),
 		},
 	}
@@ -93,7 +93,7 @@ func (n *notificationRuntime) register(registrar sdk.Registrar) error {
 }
 
 func notificationInputSchema() json.RawMessage {
-	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subjectKey":{"type":"string","minLength":1,"maxLength":256},"message":{"type":"string","minLength":1,"maxLength":2000}},"required":["subjectKey","message"],"additionalProperties":false}`)
+	return json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subjectKey":{"type":"string","minLength":1,"maxLength":256,"title":"主题标识"},"message":{"type":"string","minLength":1,"maxLength":2000,"title":"消息内容"}},"required":["subjectKey","message"],"additionalProperties":false}`)
 }
 
 func notificationOutputSchema(channel string) json.RawMessage {
@@ -120,14 +120,14 @@ func notificationOutputSchema(channel string) json.RawMessage {
 func (a notificationAction) Execute(ctx context.Context, request sdk.ActionRequest) (sdk.ActionResult, error) {
 	var input ExternalDeliveryInput
 	if json.Unmarshal(request.Input, &input) != nil {
-		return sdk.ActionResult{}, errors.New("notification input is invalid")
+		return sdk.ActionResult{}, errors.New("通知输入无效")
 	}
 	input.SubjectKey, input.Message = strings.TrimSpace(input.SubjectKey), strings.TrimSpace(input.Message)
 	workflowID, workflowErr := strconv.ParseInt(request.Revision.WorkflowID, 10, 64)
 	revisionID, revisionErr := strconv.ParseInt(request.Revision.RevisionID, 10, 64)
 	if workflowErr != nil || revisionErr != nil || input.SubjectKey == "" || input.Message == "" ||
 		utf8.RuneCountInString(input.SubjectKey) > 256 || utf8.RuneCountInString(input.Message) > 2000 {
-		return sdk.ActionResult{}, errors.New("notification identity or text is invalid")
+		return sdk.ActionResult{}, errors.New("通知标识或文本无效")
 	}
 	if a.channel == "in_app" {
 		return a.executeInApp(ctx, request, workflowID, revisionID, input)
@@ -140,10 +140,10 @@ func (a notificationAction) executeInApp(ctx context.Context, request sdk.Action
 		Title string `json:"title"`
 	}
 	if json.Unmarshal(request.Config, &config) != nil || !validNotificationTitle(config.Title) {
-		return sdk.ActionResult{}, errors.New("in-app notification configuration is invalid")
+		return sdk.ActionResult{}, errors.New("站内通知配置无效")
 	}
 	if a.runtime.inbox == nil {
-		return sdk.ActionResult{}, errors.New("inbox service unavailable")
+		return sdk.ActionResult{}, errors.New("站内通知服务不可用")
 	}
 	raw, err := a.runtime.inbox.DeliverInbox(ctx, sdk.InboxRequest{Revision: request.Revision, OperationKey: request.OperationKey, NodeInstanceID: request.NodeInstanceID, Title: config.Title, SubjectKey: input.SubjectKey, Message: input.Message})
 	return sdk.ActionResult{Output: raw}, err
@@ -166,13 +166,13 @@ func (a notificationAction) executeExternal(ctx context.Context, request sdk.Act
 		if updateErr := FinishExternalDelivery(ctx, a.runtime.db, delivery.ID, "failed", category); updateErr != nil {
 			return sdk.ActionResult{}, updateErr
 		}
-		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("notification provider result requires reconciliation")}
+		return sdk.ActionResult{}, &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("通知发送结果未知，须先核对结果")}
 	}
 	if err := FinishExternalDelivery(ctx, a.runtime.db, delivery.ID, "delivered", ""); err != nil {
 		return sdk.ActionResult{}, err
 	}
 	if err := a.runtime.db.WithContext(ctx).First(&delivery, delivery.ID).Error; err != nil {
-		return sdk.ActionResult{}, errors.New("load notification delivery failed")
+		return sdk.ActionResult{}, errors.New("读取通知发送记录失败")
 	}
 	return notificationResult([]Delivery{delivery}, externalRecipientCount(a.channel, request.Config)), nil
 }
@@ -187,14 +187,14 @@ func BeginExternalDelivery(ctx context.Context, database *gorm.DB, request sdk.A
 	if err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&delivery)
 		if result.Error != nil {
-			return errors.New("persist notification delivery failed")
+			return errors.New("保存通知发送记录失败")
 		}
 		if result.RowsAffected == 0 {
 			if err := tx.Where("operation_key = ?", request.OperationKey).Take(&delivery).Error; err != nil {
-				return errors.New("load notification delivery failed")
+				return errors.New("读取通知发送记录失败")
 			}
 			if delivery.Status != "delivered" {
-				return &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("delivery result requires reconciliation")}
+				return &sdk.ExecutionError{Class: sdk.ErrorUnknownResult, Err: errors.New("发送结果未知，须先核对结果")}
 			}
 		}
 		return nil
@@ -215,7 +215,7 @@ func FinishExternalDelivery(ctx context.Context, database *gorm.DB, deliveryID i
 		updates["last_error_category"] = category
 	}
 	if err := database.WithContext(ctx).Model(&Delivery{}).Where("id = ?", deliveryID).Updates(updates).Error; err != nil {
-		return errors.New("finish notification delivery failed")
+		return errors.New("保存通知发送结果失败")
 	}
 	return nil
 }
@@ -229,7 +229,7 @@ func (n *notificationRuntime) sendExternal(ctx context.Context, channel string, 
 	case "smtp":
 		return n.sendSMTP(sendCtx, request, title, message)
 	default:
-		return "configuration", errors.New("unsupported notification channel")
+		return "configuration", errors.New("不支持此通知渠道")
 	}
 }
 
@@ -238,7 +238,7 @@ func notificationTitle(raw json.RawMessage) (string, error) {
 		Title string `json:"title"`
 	}
 	if json.Unmarshal(raw, &config) != nil || !validNotificationTitle(config.Title) {
-		return "", errors.New("notification configuration is invalid")
+		return "", errors.New("通知配置无效")
 	}
 	return strings.TrimSpace(config.Title), nil
 }

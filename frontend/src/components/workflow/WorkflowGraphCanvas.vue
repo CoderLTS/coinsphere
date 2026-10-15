@@ -33,6 +33,7 @@
   const props = defineProps<{
     graph: WorkflowGraph
     definitions: WorkflowNodeDefinition[]
+    addableTypes?: string[]
     readonly?: boolean
     hideControls?: boolean
     states?: Record<string, string>
@@ -64,17 +65,40 @@
   let canvas: Graph | undefined
   let rendering = false
   let selectedID = ''
+  const rendered = new Map<string, string>()
   const render = () => {
     if (!canvas) return
     rendering = true
     try {
-      const { sx, sy } = canvas.scale()
-      const { tx, ty } = canvas.translate()
-      canvas.fromJSON({
-        cells: canvasCells(props.graph, props.definitions, props.states, selectedID)
-      })
-      canvas.scale(sx, sy)
-      canvas.translate(tx, ty)
+      const models = canvasCells(props.graph, props.definitions, props.states, selectedID)
+      const ids = new Set(models.map((model) => model.id))
+      for (const cell of canvas.getCells())
+        if (!ids.has(cell.id)) {
+          canvas.removeCell(cell)
+          rendered.delete(cell.id)
+        }
+      for (const model of models) {
+        const encoded = JSON.stringify(model)
+        if (rendered.get(model.id) === encoded && canvas.getCellById(model.id)) continue
+        const cell = canvas.getCellById(model.id)
+        if (!cell) {
+          if ('ports' in model) canvas.addNode(model)
+          else canvas.addEdge(model)
+        } else if (cell.isNode() && 'ports' in model) {
+          cell.position(model.x, model.y)
+          cell.size(model.width, model.height)
+          cell.attr(model.attrs)
+          cell.attr('label/text', model.label)
+          cell.setProp('ports', model.ports)
+          cell.setData(model.data)
+        } else if (cell.isEdge() && 'source' in model) {
+          cell.setSource(model.source)
+          cell.setTarget(model.target)
+          cell.attr(model.attrs)
+          cell.setLabels(model.labels)
+        }
+        rendered.set(model.id, encoded)
+      }
     } finally {
       rendering = false
     }
@@ -92,14 +116,26 @@
   const drop = (event: DragEvent) => {
     if (props.readonly || !canvas) return
     const type = event.dataTransfer?.getData('application/coinsphere-node')
-    const definition = props.definitions.find((item) => item.type === type && item.available)
+    const definition = props.definitions.find(
+      (item) =>
+        item.type === type &&
+        (props.addableTypes ? props.addableTypes.includes(item.type) : item.available)
+    )
     if (!definition) return
     const next = addNode(props.graph, definition)
     const point = canvas.clientToLocal(event.clientX, event.clientY)
     next.nodes[next.nodes.length - 1].position = { x: point.x, y: point.y }
     emit('update:graph', next)
   }
-  defineExpose({ zoom, fit, center })
+  defineExpose({
+    zoom,
+    fit,
+    center,
+    focus: (id: string) => {
+      const cell = canvas?.getCellById(id)
+      if (cell) canvas?.centerCell(cell)
+    }
+  })
   onMounted(() => {
     if (!container.value) return
     canvas = new Graph({

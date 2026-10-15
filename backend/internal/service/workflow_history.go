@@ -98,11 +98,11 @@ func (a *App) GetWorkflowRunDetail(ctx context.Context, runID int64) (WorkflowRu
 	}
 	var nodes []db.WorkflowRunNode
 	if err := a.DB.WithContext(ctx).Where("run_id = ?", runID).Order("id").Find(&nodes).Error; err != nil {
-		return WorkflowRunDetail{}, errors.New("list workflow node runs failed")
+		return WorkflowRunDetail{}, errors.New("读取节点运行记录失败")
 	}
 	var logRows []db.WorkflowNodeLog
 	if err := a.DB.WithContext(ctx).Where("run_id = ?", runID).Order("logged_at, id").Find(&logRows).Error; err != nil {
-		return WorkflowRunDetail{}, errors.New("list workflow node logs failed")
+		return WorkflowRunDetail{}, errors.New("读取节点日志失败")
 	}
 	logs := make([]WorkflowNodeLogView, len(logRows))
 	logsByNode := make(map[int64][]WorkflowNodeLogView)
@@ -133,7 +133,7 @@ JOIN workflow_run_nodes n ON n.id = r.run_node_id
 JOIN workflow_artifacts a ON a.sha256 = r.artifact_sha256
 WHERE n.run_id = ?
 ORDER BY n.id, r.ordinal`, runID).Scan(&artifacts).Error; err != nil {
-		return WorkflowRunDetail{}, errors.New("list workflow run artifacts failed")
+		return WorkflowRunDetail{}, errors.New("读取运行制品列表失败")
 	}
 	artifactViews := make([]WorkflowArtifactView, len(artifacts))
 	for index, artifact := range artifacts {
@@ -148,7 +148,7 @@ ORDER BY n.id, r.ordinal`, runID).Scan(&artifacts).Error; err != nil {
 	if run.EventRecordID > 0 {
 		var event db.WorkflowEventRecord
 		if err := a.DB.WithContext(ctx).First(&event, run.EventRecordID).Error; err != nil {
-			return WorkflowRunDetail{}, errors.New("load workflow run event summary failed")
+			return WorkflowRunDetail{}, errors.New("读取运行事件摘要失败")
 		}
 		detail.Event = &WorkflowRunEventView{
 			ID: event.ID, Source: event.Source, EventID: event.EventID, Type: event.EventType,
@@ -180,7 +180,7 @@ func (a *App) GetWorkflowArtifactManifest(ctx context.Context, digest string, ve
 		size, copyErr := io.Copy(hash, reader)
 		closeErr := reader.Close()
 		if copyErr != nil || closeErr != nil || size != artifact.SizeBytes || hex.EncodeToString(hash.Sum(nil)) != artifact.SHA256 {
-			return WorkflowArtifactView{}, errors.New("workflow artifact verification failed")
+			return WorkflowArtifactView{}, errors.New("工作流制品校验失败")
 		}
 		view.Verified = true
 	}
@@ -261,7 +261,7 @@ WHERE r.status IN ('succeeded','failed','cancelled')
 		return nil
 	})
 	if err != nil {
-		return errors.New("clean workflow history failed")
+		return errors.New("清理工作流历史失败")
 	}
 	for _, key := range storageKeys {
 		if strings.TrimSpace(a.ArtifactRoot) == "" {
@@ -269,7 +269,7 @@ WHERE r.status IN ('succeeded','failed','cancelled')
 		}
 		if err := os.Remove(filepath.Join(a.ArtifactRoot, filepath.FromSlash(key))); err != nil && !errors.Is(err, os.ErrNotExist) {
 			// ponytail: an orphaned compressed file is harmless; add a filesystem reconciliation sweep if this occurs in practice.
-			return errors.New("remove expired workflow artifact failed")
+			return errors.New("移除过期工作流制品失败")
 		}
 	}
 	return nil
@@ -307,14 +307,14 @@ func loadWorkflowArtifactManifests(tx *gorm.DB, artifacts []sdk.Artifact) ([]wor
 	manifests := make([]workflowArtifactManifest, len(artifacts))
 	for index, item := range artifacts {
 		if !validWorkflowArtifactDigest(item.SHA256) || item.Size < 0 || strings.TrimSpace(item.MediaType) == "" {
-			return nil, errors.New("workflow action returned an invalid artifact")
+			return nil, errors.New("工作流节点返回了无效制品")
 		}
 		var artifact db.WorkflowArtifact
 		if err := tx.First(&artifact, "sha256 = ?", item.SHA256).Error; err != nil {
-			return nil, errors.New("workflow action returned an unknown artifact")
+			return nil, errors.New("工作流节点返回了未登记的制品")
 		}
 		if artifact.SizeBytes != item.Size || artifact.MediaType != item.MediaType {
-			return nil, errors.New("workflow action returned inconsistent artifact metadata")
+			return nil, errors.New("工作流节点返回的制品元数据不一致")
 		}
 		manifests[index] = workflowArtifactManifest{
 			SHA256: artifact.SHA256, MediaType: artifact.MediaType, Encoding: artifact.Encoding,
@@ -330,7 +330,7 @@ func createWorkflowArtifactRefs(tx *gorm.DB, runNodeID int64, manifests []workfl
 			RunNodeID: runNodeID, ArtifactSHA256: manifest.SHA256, Ordinal: index,
 			MediaType: manifest.MediaType, SizeBytes: manifest.SizeBytes,
 		}).Error; err != nil {
-			return errors.New("create workflow artifact reference failed")
+			return errors.New("创建工作流制品引用失败")
 		}
 	}
 	return nil
@@ -340,11 +340,11 @@ type workflowArtifactStore struct{ app *App }
 
 func (s workflowArtifactStore) Put(ctx context.Context, mediaType string, source io.Reader) (sdk.Artifact, error) {
 	if strings.TrimSpace(s.app.ArtifactRoot) == "" {
-		return sdk.Artifact{}, errors.New("workflow artifact storage is unavailable")
+		return sdk.Artifact{}, errors.New("工作流制品存储不可用")
 	}
 	baseType, parameters, err := mime.ParseMediaType(strings.TrimSpace(mediaType))
 	if err != nil || baseType == "" {
-		return sdk.Artifact{}, errors.New("workflow artifact media type is invalid")
+		return sdk.Artifact{}, errors.New("工作流制品媒体类型无效")
 	}
 	mediaType = mime.FormatMediaType(baseType, parameters)
 	digest, key, size, storedSize, err := writeWorkflowArtifact(ctx, s.app.ArtifactRoot, source)
@@ -366,14 +366,14 @@ func (s workflowArtifactStore) Put(ctx context.Context, mediaType string, source
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&artifact).Error
 	}); err != nil {
-		return sdk.Artifact{}, errors.New("record workflow artifact failed")
+		return sdk.Artifact{}, errors.New("记录工作流制品失败")
 	}
 	var stored db.WorkflowArtifact
 	if err := s.app.DB.WithContext(ctx).First(&stored, "sha256 = ?", digest).Error; err != nil {
-		return sdk.Artifact{}, errors.New("load workflow artifact failed")
+		return sdk.Artifact{}, errors.New("读取工作流制品失败")
 	}
 	if stored.MediaType != mediaType || stored.SizeBytes != size || stored.StoredSizeBytes != storedSize || stored.StorageKey != key {
-		return sdk.Artifact{}, errors.New("workflow artifact metadata conflicts with existing content")
+		return sdk.Artifact{}, errors.New("工作流制品元数据与已有内容冲突")
 	}
 	return sdk.Artifact{SHA256: digest, MediaType: mediaType, Size: size}, nil
 }
@@ -412,33 +412,33 @@ func (s workflowArtifactStore) Open(ctx context.Context, digest string) (io.Read
 func (a *App) loadWorkflowArtifact(ctx context.Context, digest string) (db.WorkflowArtifact, error) {
 	digest = strings.ToLower(strings.TrimSpace(digest))
 	if !validWorkflowArtifactDigest(digest) {
-		return db.WorkflowArtifact{}, fmt.Errorf("%w: workflow artifact", ErrNotFound)
+		return db.WorkflowArtifact{}, fmt.Errorf("%w：工作流制品", ErrNotFound)
 	}
 	var artifact db.WorkflowArtifact
 	if err := a.DB.WithContext(ctx).First(&artifact, "sha256 = ?", digest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return db.WorkflowArtifact{}, fmt.Errorf("%w: workflow artifact", ErrNotFound)
+			return db.WorkflowArtifact{}, fmt.Errorf("%w：工作流制品", ErrNotFound)
 		}
-		return db.WorkflowArtifact{}, errors.New("load workflow artifact failed")
+		return db.WorkflowArtifact{}, errors.New("读取工作流制品失败")
 	}
 	if artifact.StorageKey != workflowArtifactKey(digest) {
-		return db.WorkflowArtifact{}, errors.New("workflow artifact storage key is invalid")
+		return db.WorkflowArtifact{}, errors.New("工作流制品存储键无效")
 	}
 	return artifact, nil
 }
 
 func (a *App) openWorkflowArtifact(artifact db.WorkflowArtifact) (io.ReadCloser, error) {
 	if strings.TrimSpace(a.ArtifactRoot) == "" {
-		return nil, errors.New("workflow artifact storage is unavailable")
+		return nil, errors.New("工作流制品存储不可用")
 	}
 	file, err := os.Open(filepath.Join(a.ArtifactRoot, filepath.FromSlash(artifact.StorageKey)))
 	if err != nil {
-		return nil, errors.New("open workflow artifact failed")
+		return nil, errors.New("打开工作流制品失败")
 	}
 	reader, err := gzip.NewReader(file)
 	if err != nil {
 		_ = file.Close()
-		return nil, errors.New("decompress workflow artifact failed")
+		return nil, errors.New("解压工作流制品失败")
 	}
 	return &workflowArtifactReader{Reader: reader, compressed: file}, nil
 }
@@ -454,14 +454,14 @@ func (r *workflowArtifactReader) Close() error {
 
 func writeWorkflowArtifact(ctx context.Context, root string, source io.Reader) (digest, key string, size, storedSize int64, err error) {
 	if source == nil {
-		return "", "", 0, 0, errors.New("workflow artifact source is required")
+		return "", "", 0, 0, errors.New("须提供工作流制品来源")
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return "", "", 0, 0, errors.New("create workflow artifact directory failed")
+		return "", "", 0, 0, errors.New("创建工作流制品目录失败")
 	}
 	temporary, err := os.CreateTemp(root, "artifact-*.tmp")
 	if err != nil {
-		return "", "", 0, 0, errors.New("create workflow artifact temporary file failed")
+		return "", "", 0, 0, errors.New("创建工作流制品临时文件失败")
 	}
 	temporaryName := temporary.Name()
 	defer func() { _ = os.Remove(temporaryName) }()
@@ -476,31 +476,31 @@ func writeWorkflowArtifact(ctx context.Context, root string, source io.Reader) (
 		err = closeErr
 	}
 	if err != nil {
-		return "", "", 0, 0, errors.New("write workflow artifact failed")
+		return "", "", 0, 0, errors.New("写入工作流制品失败")
 	}
 	if size > maxWorkflowArtifactBytes {
-		return "", "", 0, 0, errors.New("workflow artifact exceeds 1 GiB")
+		return "", "", 0, 0, errors.New("工作流制品超过 1 GiB 限制")
 	}
 	digest = hex.EncodeToString(hash.Sum(nil))
 	key = workflowArtifactKey(digest)
 	target := filepath.Join(root, filepath.FromSlash(key))
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return "", "", 0, 0, errors.New("create workflow artifact shard failed")
+		return "", "", 0, 0, errors.New("创建工作流制品分片失败")
 	}
 	if info, statErr := os.Stat(target); statErr == nil {
 		return digest, key, size, info.Size(), nil
 	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return "", "", 0, 0, errors.New("inspect workflow artifact target failed")
+		return "", "", 0, 0, errors.New("检查工作流制品目标失败")
 	}
 	info, err := os.Stat(temporaryName)
 	if err != nil {
-		return "", "", 0, 0, errors.New("inspect workflow artifact failed")
+		return "", "", 0, 0, errors.New("检查工作流制品失败")
 	}
 	storedSize = info.Size()
 	if err := os.Rename(temporaryName, target); err != nil {
 		info, statErr := os.Stat(target)
 		if statErr != nil {
-			return "", "", 0, 0, errors.New("store workflow artifact failed")
+			return "", "", 0, 0, errors.New("存储工作流制品失败")
 		}
 		storedSize = info.Size()
 	}

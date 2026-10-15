@@ -25,4 +25,3 @@ export const nodeEditors = Object.fromEntries(
 )
 
 export const resultPages = { backtests: () => import('./BacktestResults.vue') }
-export const resultConfigs = { backtests: () => import('./BacktestResultConfig.vue') }

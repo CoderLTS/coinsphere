@@ -32,7 +32,7 @@ func (p marketDataProvider) Instruments(ctx context.Context, query trading.Instr
 	}
 	var rows []binanceInstrument
 	if err := db.Limit(limit).Find(&rows).Error; err != nil {
-		return nil, errors.New("list Binance instruments failed")
+		return nil, errors.New("读取币安品种列表失败")
 	}
 	result := make([]trading.Instrument, len(rows))
 	for i, row := range rows {
@@ -49,7 +49,7 @@ func (p marketDataProvider) Candles(ctx context.Context, query trading.CandleQue
 	}
 	limit := query.Limit
 	if limit <= 0 || limit > 1_000_001 {
-		return nil, errors.New("Binance candle limit is invalid")
+		return nil, errors.New("币安 K 线数量限制无效")
 	}
 	db := p.runtime.db.WithContext(ctx).Where("market = ? AND instrument = ? AND interval = ?", config.Market, config.Instrument, config.Interval)
 	if !query.StartTime.IsZero() {
@@ -60,7 +60,7 @@ func (p marketDataProvider) Candles(ctx context.Context, query trading.CandleQue
 	}
 	var rows []binanceCandle
 	if err := db.Order("open_time DESC").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, errors.New("load Binance candles failed")
+		return nil, errors.New("读取币安 K 线失败")
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTime.Before(rows[j].OpenTime) })
 	result := make([]trading.Candle, len(rows))
@@ -88,7 +88,7 @@ func (p marketDataProvider) Quote(ctx context.Context, query trading.QuoteQuery)
 		return trading.Quote{}, err
 	}
 	if strings.ToUpper(payload.Symbol) != config.Instrument {
-		return trading.Quote{}, errors.New("Binance quote instrument mismatch")
+		return trading.Quote{}, errors.New("币安报价的交易品种不匹配")
 	}
 	var text string
 	if json.Unmarshal(payload.Price, &text) != nil {
@@ -96,7 +96,7 @@ func (p marketDataProvider) Quote(ctx context.Context, query trading.QuoteQuery)
 	}
 	price, err := decimal.NewFromString(text)
 	if err != nil || price.Sign() <= 0 {
-		return trading.Quote{}, fmt.Errorf("Binance quote price is invalid")
+		return trading.Quote{}, fmt.Errorf("币安报价价格无效")
 	}
 	quotedAt := time.Now().UTC()
 	if payload.Time > 0 {

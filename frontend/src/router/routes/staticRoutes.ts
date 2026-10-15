@@ -105,8 +105,14 @@ export const staticRoutes: AppRouteRecordRaw[] = [
           title: '历史运行日志',
           isHideTab: true,
           isHide: true,
-          activePath: '/scheduler/definition'
+          activePath: '/scheduler/execution'
         }
+      },
+      {
+        path: '/scheduler/tasks',
+        name: 'SchedulerWorkflowTasks',
+        component: () => import('@views/scheduler/tasks/index.vue'),
+        meta: { title: '人工待办', isHideTab: true, isHide: true, activePath: '/scheduler/tasks' }
       },
       {
         path: '/scheduler/execution/:executionId/detail',
@@ -116,7 +122,7 @@ export const staticRoutes: AppRouteRecordRaw[] = [
           title: '执行详情',
           isHideTab: true,
           isHide: true,
-          activePath: '/scheduler/definition'
+          activePath: '/scheduler/execution'
         }
       }
     ]

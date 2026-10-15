@@ -3,7 +3,6 @@ export interface ResultPageContribution {
   pageKey: string
   title: string
   componentEntry: string
-  configComponentEntry?: string
   scopeSchema: Record<string, unknown>
   filterSchema: Record<string, unknown>
   actions: string[]

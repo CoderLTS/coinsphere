@@ -1,4 +1,4 @@
-# ADR 0007：个人工作流微内核与 generation 5
+# ADR 0007：个人工作流微内核与 generation 5 基线
 
 - 状态：接受
 - 日期：2026-10-13
@@ -8,7 +8,7 @@
 
 CoinSphere 只服务一个个人账号，以通用工作流编排为核心，可信源码插件实现业务节点、数据及页面。继续使用 Vue/ArtDesignPro、单实例 Go 模块化单体和 PostgreSQL 16，不增加商店、分布式服务或兼容层。
 
-1. Core 5 / SDK 5、manifest schemaVersion 1、Graph 3。删除角色权限、工作流所有权/分享和固定 ResultView；保留会话复验、资源存在性、节点归属、事务与插件生命周期保护。
+1. Core 1.0.0 / SDK 1、manifest schemaVersion 1、Graph 3。删除角色权限、工作流所有权/分享和固定 ResultView；保留会话复验、资源存在性、节点归属、事务与插件生命周期保护。generation 5 数据库基线保持不变。
 2. 菜单只保存页面引用及用户布局；默认布局首次写入后不再同步。每页最多一个入口，多级目录与页面稳定地址独立。新增贡献待挂载，缺插件保留配置并隐藏入口。
 3. AI 拥有 plugin_ai 数据、模型管理、流式助手、modelId 节点与顶栏 chat 贡献。Host 只提供实际需要的通用读接口、会话复验、凭据加解密及停用草稿创建，禁止插件依赖 Core 内部业务服务。
 4. Binance 保留公共行情、Paper 账本与导出；Paper 计算归所属实现。删除 Live、私有账户流、私有 API、账户放行、页面、节点、模板和表。

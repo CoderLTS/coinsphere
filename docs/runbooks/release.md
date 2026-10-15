@@ -25,6 +25,8 @@ bash deploy/production/deploy.sh vX.Y.Z /path/to/release-manifest.json
 
 4GB Runner 保持单并行 BuildKit、2304m 内存、3072m 内存加 Swap 总上限、前端 Node 1792m 堆和 Go 单包编译；镜像直接推送本机 Registry，固定 digest 部署。构建缓存结束后限 2gb，保留既有 Registry retention。工作流不创建 GitHub Release，也不自动清理旧部署。
 
+官方插件安装版本由目标镜像的 migrate Up 同步，保留已卸载状态与历史引用。版本变化时在同一事务中锁定安装行并拒绝任何活动引用；失败不写入部分版本。不能通过删除引用、改写工作流或重置数据库绕过保护。初始 1.0.0 版本重置同样适用。跨官方插件版本回退时，恢复点必须包含配对的安装记录；仅恢复旧镜像不能证明插件已正确加载。
+
 ## 仅更改 Compose 项目名称
 
 项目更名需要用户授权并安排短暂维护窗口；部署器仍拒绝普通升级改绑身份。此操作复用当前已扫描的镜像 digest、数据库、凭据和文件，不执行初始化或 migration。

@@ -5,7 +5,7 @@
         <p>{{ eyebrow }}</p>
         <h3 :id="titleId">{{ title }}</h3>
       </div>
-      <span :data-status="result.runNode.status">{{ result.runNode.status }}</span>
+      <span :data-status="result.runNode.status">{{ statusLabel(result.runNode.status) }}</span>
     </header>
     <dl>
       <div v-for="item in items" :key="item.label">
@@ -21,6 +21,7 @@
 
 <script setup lang="ts">
   import type { WorkflowRunDetail, WorkflowRunNode } from '@/api/workflows'
+  import { runStatusLabel } from '@/components/workflow/status'
 
   defineProps<{
     eyebrow: string
@@ -29,6 +30,7 @@
     result: { run: WorkflowRunDetail; runNode: WorkflowRunNode }
     items: Array<{ label: string; value: string | number; code?: boolean }>
   }>()
+  const statusLabel = (value: WorkflowRunNode['status']) => runStatusLabel(value)
 </script>
 
 <style scoped>

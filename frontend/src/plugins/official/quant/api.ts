@@ -1,5 +1,8 @@
 import request from '@/utils/http'
-import type { PluginResultContext } from '@/plugins/sdk'
+export interface QuantResultQuery {
+  scope: Record<string, string | number>
+  filters: Record<string, string | number>
+}
 
 interface ItemList<T> {
   items: T[]
@@ -114,12 +117,12 @@ export const fetchQuantMarketSignals = (params: {
     params: { venue: 'binance', ...params }
   })
 
-export const fetchDirectBacktests = (context: PluginResultContext) =>
+export const fetchDirectBacktests = (context: QuantResultQuery) =>
   request.get<ItemList<QuantBacktest>>({
     url: `${quantBase}/results/backtests`,
     params: { ...context.scope, ...context.filters }
   })
-export const fetchDirectBacktestDetail = (id: number, context: PluginResultContext) =>
+export const fetchDirectBacktestDetail = (id: number, context: QuantResultQuery) =>
   request.get<QuantBacktestDetail>({
     url: `${quantBase}/results/backtests/${id}`,
     params: { ...context.scope, ...context.filters }

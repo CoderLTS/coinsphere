@@ -1,6 +1,6 @@
 # CoinSphere Go 后端
 
-Core 5 / SDK 5 / Graph 3 的个人工作流微内核：唯一账号、菜单、生命周期、定义/发布、调度/事件、运行、审批、日志、状态/检查点、制品、个人收件箱和代理。可信官方/源码插件拥有业务功能；AI 模型/助手属于 plugin_ai，Binance 只公共行情和 Paper。
+Core 1.0.0 / SDK 1 / Graph 3 的个人工作流微内核：唯一账号、菜单、生命周期、定义/发布、调度/事件、运行、审批、日志、状态/检查点、制品、个人收件箱和代理。可信官方/源码插件拥有业务功能；AI 模型/助手属于 plugin_ai，Binance 只公共行情和 Paper。
 
 只支持 PostgreSQL 16，显式 coinsphere-migrate Up 初始化 g5 空库，启动只读验证 schema。Core public 和 AI/Quant/Binance/Notification 专属 schema 分别拥有 schema_migrations_g5；旧账本拒绝原地 Up，基线 Down 拒绝。初次 seed 写 coinsphere 账号及一次导航，不覆盖已存在密码或布局。
 

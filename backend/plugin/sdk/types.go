@@ -55,6 +55,7 @@ type NodeDescriptor struct {
 	Title          string
 	Description    string
 	Category       string
+	CategoryTitle  string
 	Aliases        []string
 	Tags           []string
 	SortOrder      int
@@ -192,9 +193,8 @@ type WorkflowResource struct {
 }
 
 type ResultPageDescriptor struct {
-	Resources            func(json.RawMessage) ([]WorkflowResource, error)
-	ConfigComponentEntry string
-	ValidateScope        func(context.Context, *gorm.DB, json.RawMessage) error
+	Resources     func(json.RawMessage) ([]WorkflowResource, error)
+	ValidateScope func(context.Context, *gorm.DB, json.RawMessage) error
 
 	PageKey        string
 	Title          string
@@ -376,9 +376,9 @@ type Host struct {
 }
 
 var (
-	ErrSession  = errors.New("session is invalid")
-	ErrNotFound = errors.New("not found")
-	ErrConflict = errors.New("conflict")
+	ErrSession  = errors.New("会话无效，请重新登录")
+	ErrNotFound = errors.New("资源不存在")
+	ErrConflict = errors.New("操作冲突")
 )
 
 type CredentialCipher interface {

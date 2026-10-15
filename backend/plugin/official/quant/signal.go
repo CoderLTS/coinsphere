@@ -25,7 +25,7 @@ func (a quantSignalAction) Execute(ctx context.Context, request sdk.ActionReques
 		StrategyID, StrategyVersion, Target, EvaluatedAt, BusinessKey string
 	}
 	if json.Unmarshal(request.Input, &input) != nil {
-		return sdk.ActionResult{}, errors.New("quant signal input is invalid")
+		return sdk.ActionResult{}, errors.New("量化信号输入无效")
 	}
 	target, targetErr := decimal.NewFromString(input.Target)
 	evaluatedAt, timeErr := parseQuantUTCTime(input.EvaluatedAt)
@@ -37,7 +37,7 @@ func (a quantSignalAction) Execute(ctx context.Context, request sdk.ActionReques
 	if targetErr != nil || timeErr != nil || workflowErr != nil || revisionErr != nil ||
 		target.LessThan(decimal.NewFromInt(-1)) || target.GreaterThan(quantOne) || input.StrategyID == "" ||
 		input.StrategyVersion == "" || input.BusinessKey == "" || len(input.BusinessKey) > 256 {
-		return sdk.ActionResult{}, errors.New("quant signal identity or Decimal target is invalid")
+		return sdk.ActionResult{}, errors.New("量化信号标识或十进制目标值无效")
 	}
 	if existing, ok, err := a.runtime.loadQuantSignalByOperation(ctx, request.OperationKey); err != nil {
 		return sdk.ActionResult{}, err
@@ -54,28 +54,28 @@ func (a quantSignalAction) Execute(ctx context.Context, request sdk.ActionReques
 	err = a.runtime.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		identity := fmt.Sprintf("%d:%s:%s", workflowID, request.NodeInstanceID, input.BusinessKey)
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, identity).Error; err != nil {
-			return errors.New("lock Quant signal business identity failed")
+			return errors.New("锁定量化信号业务标识失败")
 		}
 		var superseded []quantSignal
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 			"workflow_id = ? AND node_instance_id = ? AND business_key = ? AND status = 'pending'",
 			workflowID, request.NodeInstanceID, input.BusinessKey,
 		).Find(&superseded).Error; err != nil {
-			return errors.New("load replaced Quant signals failed")
+			return errors.New("读取被替代的量化信号失败")
 		}
 		if len(superseded) > 0 {
 			if err := tx.Model(&quantSignal{}).Where("id IN ?", quantSignalIDs(superseded)).Updates(map[string]any{
 				"status": "superseded", "decided_at": now,
 			}).Error; err != nil {
-				return errors.New("replace pending Quant signals failed")
+				return errors.New("替换待处理的量化信号失败")
 			}
 		}
 		if err := tx.Create(&row).Error; err != nil {
-			return errors.New("persist Quant signal failed")
+			return errors.New("保存量化信号失败")
 		}
 		if len(superseded) > 0 {
 			if err := tx.Model(&quantSignal{}).Where("id IN ?", quantSignalIDs(superseded)).Update("superseded_by", row.ID).Error; err != nil {
-				return errors.New("link replaced Quant signals failed")
+				return errors.New("关联被替代的量化信号失败")
 			}
 		}
 		return nil
@@ -95,7 +95,7 @@ func (q *quantRuntime) loadQuantSignalByOperation(ctx context.Context, operation
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return quantSignal{}, false, nil
 		}
-		return quantSignal{}, false, errors.New("load Quant signal failed")
+		return quantSignal{}, false, errors.New("读取量化信号失败")
 	}
 	return signal, true, nil
 }

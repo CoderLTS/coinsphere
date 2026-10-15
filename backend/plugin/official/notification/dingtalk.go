@@ -27,17 +27,17 @@ func (n *notificationRuntime) sendDingTalk(ctx context.Context, request sdk.Acti
 		Signed bool   `json:"signed"`
 	}
 	if json.Unmarshal(request.Config, &config) != nil || config.Format != "text" && config.Format != "markdown" {
-		return "configuration", errors.New("invalid DingTalk configuration")
+		return "configuration", errors.New("钉钉配置无效")
 	}
 	accessToken, err := request.Secrets.Read(ctx, "accessToken")
 	if err != nil || strings.TrimSpace(string(accessToken)) == "" {
-		return "configuration", errors.New("DingTalk access token is unavailable")
+		return "configuration", errors.New("钉钉访问令牌不可用")
 	}
 	query := url.Values{"access_token": []string{strings.TrimSpace(string(accessToken))}}
 	if config.Signed {
 		secret, readErr := request.Secrets.Read(ctx, "signingSecret")
 		if readErr != nil || strings.TrimSpace(string(secret)) == "" {
-			return "configuration", errors.New("DingTalk signing secret is unavailable")
+			return "configuration", errors.New("钉钉签名凭据不可用")
 		}
 		timestamp := strconv.FormatInt(time.Now().UTC().UnixMilli(), 10)
 		signer := hmac.New(sha256.New, []byte(strings.TrimSpace(string(secret))))
@@ -73,10 +73,10 @@ func (n *notificationRuntime) sendDingTalk(ctx context.Context, request sdk.Acti
 		ErrorCode int `json:"errcode"`
 	}
 	if json.Unmarshal(body, &result) != nil {
-		return "invalid_response", errors.New("decode DingTalk response")
+		return "invalid_response", errors.New("解析钉钉响应失败")
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices || result.ErrorCode != 0 {
-		return "provider_rejected", errors.New("DingTalk rejected notification")
+		return "provider_rejected", errors.New("钉钉拒绝了通知请求")
 	}
 	return "", nil
 }
@@ -87,7 +87,7 @@ func readNotificationResponse(reader io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if len(body) > notificationResponseLimit {
-		return nil, errors.New("notification provider response is too large")
+		return nil, errors.New("通知服务响应超过大小限制")
 	}
 	return body, nil
 }
