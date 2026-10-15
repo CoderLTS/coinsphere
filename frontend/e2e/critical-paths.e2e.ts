@@ -1257,7 +1257,7 @@ test('保存期间锁定编辑，完成后恢复草稿操作', async ({ page }) 
   await saving
   try {
     await expect(name).toBeDisabled()
-    await expect(page.locator('.workflow-meta .el-select')).toHaveClass(/is-disabled/)
+    await expect(page.locator('.workflow-meta').getByRole('combobox')).toBeDisabled()
   } finally {
     release()
   }
