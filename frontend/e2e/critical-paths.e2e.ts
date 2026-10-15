@@ -1285,10 +1285,10 @@ test('人工待办保留全部状态筛选，运行详情只读取本次待办',
   const backend = await backendFixture(page)
   await page.goto('/scheduler/tasks?status=&runId=21')
   await expect(page.getByText('审核合成业务事项')).toBeVisible()
-  await expect(page.getByLabel('待办状态')).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: '待办状态', exact: true })).toHaveValue('')
   await page.reload()
   await expect(page.getByText('审核合成业务事项')).toBeVisible()
-  await expect(page.getByLabel('待办状态')).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: '待办状态', exact: true })).toHaveValue('')
   const scoped = page.waitForRequest((request) => {
     const url = new URL(request.url())
     return (

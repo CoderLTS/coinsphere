@@ -602,11 +602,12 @@
   }
 
   .workflow-editor-page__meta {
-    position: absolute;
-    top: 76px;
-    left: 50%;
-    z-index: 30;
-    transform: translateX(-50%);
+    flex: 0 0 auto;
+    align-self: center;
+    box-sizing: border-box;
+    max-height: 45vh;
+    margin-bottom: 10px;
+    overflow: auto;
   }
 
   @media (max-width: 768px) {
@@ -616,13 +617,6 @@
 
     .workflow-editor-page__toolbar {
       position: relative;
-    }
-
-    .workflow-editor-page__meta {
-      top: 108px;
-      right: 8px;
-      left: 8px;
-      transform: none;
     }
   }
 
