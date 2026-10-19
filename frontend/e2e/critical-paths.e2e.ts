@@ -994,10 +994,20 @@ for (const [name, path] of [
                 rect.right > card.right + 1 ||
                 rect.top < card.top - 1 ||
                 rect.bottom > card.bottom + 1
+              const text = document.createRange()
+              text.selectNodeContents(control)
               const wrappedLabel =
-                control.classList.contains('el-form-item__label') && rect.height > 34
+                control.classList.contains('el-form-item__label') &&
+                text.getBoundingClientRect().height >
+                  Number.parseFloat(getComputedStyle(control).lineHeight) + 1
               return overflow || wrappedLabel
-                ? [control.textContent?.trim() || control.className]
+                ? [
+                    {
+                      label: control.textContent?.trim() || control.className,
+                      overflow,
+                      wrappedLabel
+                    }
+                  ]
                 : []
             })
           })
