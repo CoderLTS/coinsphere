@@ -1,17 +1,7 @@
 <template>
   <section v-loading="loading" aria-label="回测结果">
     <header class="result-header"><h2>回测结果</h2><ElButton @click="load">刷新</ElButton></header>
-    <ElForm inline size="small" @submit.prevent="apply">
-      <BacktestResultConfig
-        v-model:scope="formScope"
-        v-model:filters="formFilters"
-        :filter-schema="filterSchema"
-      />
-      <ElFormItem
-        ><ElButton type="primary" native-type="submit">查询</ElButton
-        ><ElButton @click="reset">重置</ElButton></ElFormItem
-      >
-    </ElForm>
+    <BacktestResultConfig v-model="form" @search="apply" @reset="reset" />
     <ElAlert
       v-if="queryError || error"
       :title="queryError || error"
@@ -78,41 +68,6 @@
     instrument: '',
     limit: 50
   })
-  const formScope = computed({
-    get: () => ({ workflowId: form.workflowId || undefined, nodeInstanceId: form.nodeInstanceId }),
-    set: (value: Record<string, any>) => {
-      form.workflowId = Number(value.workflowId || 0)
-      form.nodeInstanceId = String(value.nodeInstanceId || '')
-    }
-  })
-  const formFilters = computed({
-    get: () => ({
-      venue: form.venue,
-      market: form.market,
-      instrument: form.instrument,
-      limit: form.limit
-    }),
-    set: (value: Record<string, any>) => {
-      form.venue = value.venue || ''
-      form.market = value.market || ''
-      form.instrument = value.instrument || ''
-      form.limit = value.limit || 50
-    }
-  })
-  const filterSchema = {
-    type: 'object',
-    properties: {
-      venue: { type: 'string', title: '交易所' },
-      market: {
-        type: 'string',
-        title: '市场',
-        enum: ['spot', 'usdm'],
-        enumLabels: ['现货', 'U 本位合约']
-      },
-      instrument: { type: 'string', title: '交易对' },
-      limit: { type: 'integer', title: '显示条数', minimum: 1, maximum: 200 }
-    }
-  }
   const query = computed(() => ({
     scope: {
       ...(applied.value.workflowId ? { workflowId: applied.value.workflowId } : {}),

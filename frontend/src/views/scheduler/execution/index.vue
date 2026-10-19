@@ -1,50 +1,23 @@
 <template>
   <main class="workflow-execution-page art-full-height">
-    <ElForm inline size="small" class="workspace-filters" @submit.prevent="apply">
-      <ElFormItem label="工作流编号"
-        ><ElInputNumber v-model="form.workflowId" :min="0" :precision="0" aria-label="工作流编号"
-      /></ElFormItem>
-      <ElFormItem label="触发方式"
-        ><ElSelect
-          v-model="form.triggerType"
-          clearable
-          placeholder="全部触发方式"
-          aria-label="触发方式"
-          ><ElOption
-            v-for="(label, value) in triggerLabels"
-            :key="value"
-            :value="value"
-            :label="label" /></ElSelect
-      ></ElFormItem>
-      <ElFormItem label="执行状态"
-        ><ElSelect v-model="form.status" clearable placeholder="全部执行状态" aria-label="执行状态"
-          ><ElOption
-            v-for="(label, value) in statusLabels"
-            :key="value"
-            :value="value"
-            :label="label" /></ElSelect
-      ></ElFormItem>
-      <ElFormItem label="时间范围"
-        ><ElDatePicker
+    <ArtSearchBar
+      v-model="form"
+      :items="formItems"
+      :show-expand="false"
+      @search="apply"
+      @reset="resetFilters"
+    >
+      <template #timeRange>
+        <ElDatePicker
           v-model="timeRange"
           type="datetimerange"
           start-placeholder="开始时间"
           end-placeholder="结束时间"
           range-separator="至"
-      /></ElFormItem>
-      <ElFormItem label="关键词"
-        ><ElInput
-          v-model="form.keyword"
-          clearable
-          :maxlength="200"
-          placeholder="节点日志或错误"
-          aria-label="关键词"
-      /></ElFormItem>
-      <ElFormItem
-        ><ElButton type="primary" native-type="submit">查询</ElButton
-        ><ElButton @click="resetFilters">重置</ElButton></ElFormItem
-      >
-    </ElForm>
+          aria-label="时间范围"
+        />
+      </template>
+    </ArtSearchBar>
     <ElAlert
       v-if="queryError || error"
       :title="queryError || error"
@@ -124,6 +97,43 @@
     failed: '失败',
     cancelled: '已取消'
   }
+  const formItems = [
+    {
+      key: 'workflowId',
+      label: '工作流编号',
+      type: 'number',
+      props: { min: 0, precision: 0, controlsPosition: 'right', 'aria-label': '工作流编号' }
+    },
+    {
+      key: 'triggerType',
+      label: '触发方式',
+      type: 'select',
+      props: {
+        clearable: true,
+        valueOnClear: '',
+        placeholder: '全部触发方式',
+        options: Object.entries(triggerLabels).map(([value, label]) => ({ value, label }))
+      }
+    },
+    {
+      key: 'status',
+      label: '执行状态',
+      type: 'select',
+      props: {
+        clearable: true,
+        valueOnClear: '',
+        placeholder: '全部执行状态',
+        options: Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
+      }
+    },
+    { key: 'timeRange', label: '时间范围', span: 12 },
+    {
+      key: 'keyword',
+      label: '关键词',
+      type: 'input',
+      props: { clearable: true, maxlength: 200, placeholder: '节点日志或错误' }
+    }
+  ]
   const loading = ref(false),
     error = ref('')
   const runList = ref({ records: [] as WorkflowRun[], total: 0, nextCursor: '', hasMore: false })

@@ -2,30 +2,28 @@
 <!-- 支持常用表单组件、自定义组件、插槽、校验、隐藏表单项 -->
 <!-- 写法同 ElementPlus 官方文档组件，把属性写在 props 里面就可以了 -->
 <template>
-  <section class="art-search-bar art-card-xs" :class="{ 'is-expanded': isExpanded }">
+  <section
+    ref="searchBarRef"
+    class="art-search-bar art-card-xs"
+    :class="{ 'is-expanded': isExpanded, 'is-mobile': isMobile }"
+  >
     <ElForm
       ref="formRef"
       :model="modelValue"
-      :label-position="labelPosition"
+      :label-position="isMobile ? 'top' : labelPosition"
+      :label-width="labelWidth"
       v-bind="{ ...$attrs }"
+      @submit.prevent="handleSearch"
     >
       <ElRow :gutter="gutter">
-        <ElCol
-          v-for="item in visibleFormItems"
-          :key="item.key"
-          :xs="getColSpan(item.span, 'xs')"
-          :sm="getColSpan(item.span, 'sm')"
-          :md="getColSpan(item.span, 'md')"
-          :lg="getColSpan(item.span, 'lg')"
-          :xl="getColSpan(item.span, 'xl')"
-        >
+        <ElCol v-for="item in visibleFormItems" :key="item.key" :span="getColSpan(item.span)">
           <ElFormItem
             :prop="item.key"
-            :label-width="item.label ? item.labelWidth || labelWidth : undefined"
+            :label="typeof item.label === 'string' ? item.label : undefined"
+            :label-width="item.label ? item.labelWidth : 0"
           >
-            <template #label v-if="item.label">
-              <component v-if="typeof item.label !== 'string'" :is="item.label" />
-              <span v-else>{{ item.label }}</span>
+            <template #label v-if="item.label && typeof item.label !== 'string'">
+              <component :is="item.label" />
             </template>
             <slot :name="item.key" :item="item" :modelValue="modelValue">
               <component
@@ -69,7 +67,7 @@
             </slot>
           </ElFormItem>
         </ElCol>
-        <ElCol :xs="24" :sm="24" :md="span" :lg="span" :xl="span" class="action-column">
+        <ElCol :span="getColSpan(undefined)" class="action-column">
           <div class="action-buttons-wrapper" :style="actionButtonsStyle">
             <div class="form-buttons">
               <ElButton v-if="showReset" class="reset-button" @click="handleReset" v-ripple>
@@ -79,12 +77,13 @@
                 v-if="showSearch"
                 type="primary"
                 class="search-button"
-                @click="handleSearch"
+                native-type="submit"
                 v-ripple
                 :disabled="disabledSearch"
               >
                 {{ t('table.searchBar.search') }}
               </ElButton>
+              <slot name="actions" />
             </div>
             <div v-if="shouldShowExpandToggle" class="filter-toggle" @click="toggleExpand">
               <span>{{ expandToggleText }}</span>
@@ -104,7 +103,7 @@
 
 <script setup lang="ts">
   import { ArrowUpBold, ArrowDownBold } from '@element-plus/icons-vue'
-  import { useWindowSize } from '@vueuse/core'
+  import { useElementSize } from '@vueuse/core'
   import { useI18n } from 'vue-i18n'
   import { toRaw, type Component } from 'vue'
   import {
@@ -150,7 +149,9 @@
     treeselect: ElTreeSelect // 树选择器
   }
 
-  const { width } = useWindowSize()
+  const searchBar = useTemplateRef<HTMLElement>('searchBarRef')
+  // 使用外框宽度，避免切换内边距时反复触发移动端断点。
+  const { width } = useElementSize(searchBar, undefined, { box: 'border-box' })
   const { t } = useI18n()
   const isMobile = computed(() => width.value < 500)
 
@@ -234,7 +235,7 @@
     gutter: 12,
     isExpand: false,
     labelPosition: 'right',
-    labelWidth: '70px',
+    labelWidth: 'auto',
     showExpand: true,
     defaultExpanded: false,
     buttonLeftLimit: 2,
@@ -259,6 +260,7 @@
     if (!value) return {}
 
     const deepClone = (source: unknown): unknown => {
+      if (source instanceof Date) return new Date(source.getTime())
       if (Array.isArray(source)) {
         return source.map((item) => deepClone(item))
       }
@@ -317,28 +319,19 @@
 
   /**
    * 获取列宽 span 值
-   * 根据屏幕尺寸智能降级，避免小屏幕上表单项被压缩过小
+   * 按搜索栏实际宽度降级，避免侧栏和窄面板挤压表单。
    */
-  const getColSpan = (itemSpan: number | undefined, breakpoint: ResponsiveBreakpoint): number => {
-    return calculateResponsiveSpan(itemSpan, span.value, breakpoint)
-  }
-
-  // 搜索表单清空输入时不保留空字符串，避免后续请求携带空字段。
-  const normalizeFieldValue = (value: unknown) => {
-    return value === '' ? undefined : value
+  const getColSpan = (itemSpan: number | undefined): number => {
+    const breakpoint: ResponsiveBreakpoint =
+      width.value >= 1200 ? 'lg' : width.value >= 992 ? 'md' : width.value >= 768 ? 'sm' : 'xs'
+    return breakpoint === 'xs' ? 24 : calculateResponsiveSpan(itemSpan, span.value, breakpoint)
   }
 
   const getFieldValue = (key: string) => modelValue.value[key]
 
+  // 空字符串可表示“全部状态”，只在查询输出中清洗。
   const setFieldValue = (key: string, value: unknown) => {
-    const normalizedValue = normalizeFieldValue(value)
-
-    if (normalizedValue === undefined) {
-      delete modelValue.value[key]
-      return
-    }
-
-    modelValue.value[key] = normalizedValue
+    modelValue.value[key] = value
   }
 
   const isRichTextEmpty = (value: string) => {
@@ -359,6 +352,7 @@
   // 搜索时按配置清洗空值，但保留 0 和 false 这类有效筛选条件。
   const sanitizeOutputValue = (value: unknown): unknown => {
     const options = sanitizeOutputOptions.value
+    if (value instanceof Date) return value
 
     if (Array.isArray(value)) {
       const sanitizedArray = value
@@ -489,6 +483,7 @@
    * 处理搜索事件
    */
   const handleSearch = () => {
+    if (props.disabledSearch) return
     // 对外只抛出清洗后的查询参数，避免接口收到空数组/空字符串。
     emit('search', getSanitizedOutput())
   }
@@ -507,10 +502,28 @@
 
 <style lang="scss" scoped>
   .art-search-bar {
+    flex-shrink: 0;
+    min-width: 0;
     padding: 12px 16px 0;
 
     :deep(.el-form-item) {
       margin-bottom: 10px;
+    }
+
+    :deep(.el-form-item__label) {
+      white-space: nowrap;
+    }
+
+    :deep(.el-form-item__content) {
+      min-width: 0;
+    }
+
+    :deep(.el-input),
+    :deep(.el-select),
+    :deep(.el-input-number),
+    :deep(.el-date-editor) {
+      width: 100%;
+      min-width: 0;
     }
 
     .action-column {
@@ -527,7 +540,13 @@
 
       .form-buttons {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
+        align-items: center;
+
+        :deep(.el-button + .el-button) {
+          margin-left: 0;
+        }
       }
 
       .filter-toggle {
@@ -559,25 +578,22 @@
     }
   }
 
-  // 响应式优化
-  @media (width <= 768px) {
-    .art-search-bar {
-      padding: 12px 12px 0;
+  .art-search-bar.is-mobile {
+    padding: 12px 12px 0;
 
-      .action-column {
-        .action-buttons-wrapper {
-          flex-direction: column;
-          gap: 8px;
-          align-items: stretch;
+    .action-column {
+      .action-buttons-wrapper {
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
 
-          .form-buttons {
-            justify-content: center;
-          }
+        .form-buttons {
+          justify-content: center;
+        }
 
-          .filter-toggle {
-            justify-content: center;
-            margin-left: 0;
-          }
+        .filter-toggle {
+          justify-content: center;
+          margin-left: 0;
         }
       }
     }

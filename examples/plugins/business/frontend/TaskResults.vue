@@ -1,15 +1,20 @@
 <template>
   <section aria-label="业务事项结果">
     <h2>业务事项</h2>
-    <ElForm inline size="small" @submit.prevent="apply">
-      <ElFormItem label="工作流编号"
-        ><ElInputNumber v-model="form.workflowId" :min="0" :precision="0" aria-label="工作流编号"
-      /></ElFormItem>
-      <ElFormItem
-        ><ElButton type="primary" native-type="submit">查询</ElButton
-        ><ElButton @click="reset">全部工作流</ElButton></ElFormItem
-      >
-    </ElForm>
+    <ArtSearchBar
+      v-model="form"
+      :items="[
+        {
+          key: 'workflowId',
+          label: '工作流编号',
+          type: 'number',
+          props: { min: 0, precision: 0, controlsPosition: 'right', 'aria-label': '工作流编号' }
+        }
+      ]"
+      :show-expand="false"
+      @search="apply"
+      @reset="reset"
+    />
     <ElAlert
       v-if="queryError || error"
       :title="queryError || error"
@@ -30,7 +35,7 @@
   import { watch, ref, computed } from 'vue'
   import request from '@/utils/http'
   import type { PluginPageContext } from '@/plugins/sdk'
-  import { useRouteFilters } from '@/plugins/ui'
+  import { ArtSearchBar, useRouteFilters } from '@/plugins/ui'
   const props = defineProps<{ context: PluginPageContext }>()
   const { form, applied, queryError, apply, reset } = useRouteFilters({
     workflowId: 0

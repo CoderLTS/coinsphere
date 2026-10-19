@@ -15,17 +15,7 @@
       </div>
     </header>
 
-    <ElForm inline size="small" @submit.prevent="apply">
-      <PaperResultConfig
-        v-model:scope="formScope"
-        v-model:filters="formFilters"
-        :filter-schema="filterSchema"
-      />
-      <ElFormItem
-        ><ElButton type="primary" native-type="submit">查询</ElButton
-        ><ElButton @click="reset">重置</ElButton></ElFormItem
-      >
-    </ElForm>
+    <PaperResultConfig v-model="form" @search="apply" @reset="reset" />
     <ElAlert
       v-if="queryError || error"
       :title="queryError || error"
@@ -150,42 +140,6 @@
     instrument: '',
     status: ''
   })
-  const formScope = computed({
-    get: () => ({
-      workflowId: form.workflowId || undefined,
-      paperNodeInstanceId: form.paperNodeInstanceId
-    }),
-    set: (value: Record<string, any>) => {
-      form.workflowId = Number(value.workflowId || 0)
-      form.paperNodeInstanceId = String(value.paperNodeInstanceId || '')
-    }
-  })
-  const formFilters = computed({
-    get: () => ({ market: form.market, instrument: form.instrument, status: form.status }),
-    set: (value: Record<string, any>) => {
-      form.market = value.market || ''
-      form.instrument = value.instrument || ''
-      form.status = value.status || ''
-    }
-  })
-  const filterSchema = {
-    type: 'object',
-    properties: {
-      market: {
-        type: 'string',
-        title: '市场',
-        enum: ['spot', 'usdm'],
-        enumLabels: ['现货', 'U 本位合约']
-      },
-      instrument: { type: 'string', title: '交易对' },
-      status: {
-        type: 'string',
-        title: '订单状态',
-        enum: ['new', 'partially_filled', 'filled', 'canceled', 'rejected', 'expired'],
-        enumLabels: ['待成交', '部分成交', '已成交', '已撤单', '已拒绝', '已过期']
-      }
-    }
-  }
   const query = computed(() => ({
     scope: {
       ...(applied.value.workflowId ? { workflowId: applied.value.workflowId } : {}),

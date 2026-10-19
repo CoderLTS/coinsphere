@@ -1,25 +1,12 @@
 <template>
   <main class="art-full-height">
-    <ElForm inline size="small" class="workspace-filters" @submit.prevent="apply">
-      <ElFormItem label="状态"
-        ><ElSelect v-model="form.status" clearable placeholder="全部状态" aria-label="待办状态"
-          ><ElOption
-            v-for="(label, value) in labels"
-            :key="value"
-            :value="value"
-            :label="label" /></ElSelect
-      ></ElFormItem>
-      <ElFormItem label="工作流编号"
-        ><ElInputNumber v-model="form.workflowId" :min="0" :precision="0" aria-label="工作流编号"
-      /></ElFormItem>
-      <ElFormItem label="运行编号"
-        ><ElInputNumber v-model="form.runId" :min="0" :precision="0" aria-label="运行编号"
-      /></ElFormItem>
-      <ElFormItem
-        ><ElButton type="primary" native-type="submit">查询</ElButton
-        ><ElButton @click="resetFilters">重置</ElButton></ElFormItem
-      >
-    </ElForm>
+    <ArtSearchBar
+      v-model="form"
+      :items="formItems"
+      :show-expand="false"
+      @search="apply"
+      @reset="resetFilters"
+    />
     <ElAlert
       v-if="queryError || error"
       :title="queryError || error"
@@ -76,6 +63,32 @@
     expired: '已过期',
     superseded: '已被替代'
   }
+  const formItems = [
+    {
+      key: 'status',
+      label: '状态',
+      type: 'select',
+      props: {
+        clearable: true,
+        valueOnClear: '',
+        placeholder: '全部状态',
+        'aria-label': '待办状态',
+        options: Object.entries(labels).map(([value, label]) => ({ value, label }))
+      }
+    },
+    {
+      key: 'workflowId',
+      label: '工作流编号',
+      type: 'number',
+      props: { min: 0, precision: 0, controlsPosition: 'right', 'aria-label': '工作流编号' }
+    },
+    {
+      key: 'runId',
+      label: '运行编号',
+      type: 'number',
+      props: { min: 0, precision: 0, controlsPosition: 'right', 'aria-label': '运行编号' }
+    }
+  ]
   const tasks = ref<WorkflowHumanTask[]>([]),
     loading = ref(false),
     error = ref(''),
