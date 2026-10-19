@@ -82,7 +82,7 @@
     const current = ++request
     try {
       const result = await fetchWorkflows({ keyword, limit: 50 })
-      const items = result.records
+      const items: WorkflowItem[] = result.records
       if (form.value.workflowId && !items.some((item) => item.id === form.value.workflowId))
         items.unshift(await fetchWorkflow(form.value.workflowId))
       if (current !== request) return
