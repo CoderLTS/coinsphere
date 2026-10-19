@@ -87,92 +87,21 @@
           <span class="result-count">{{ pagination.total }} 条匹配记录</span>
         </div>
 
-        <div class="filter-grid">
-          <label class="field-control">
-            <span>时间范围</span>
-            <ElSelect v-model="filters.timeRange" @change="changeTimeRange">
-              <ElOption v-for="option in timeRangeOptions" :key="option.value" v-bind="option" />
-            </ElSelect>
-          </label>
-          <label class="field-control">
-            <span>开始时间</span>
-            <ElDatePicker
-              v-model="filters.startTime"
-              type="datetime"
-              placeholder="选择开始时间"
-              @change="markCustomRange"
-            />
-          </label>
-          <label class="field-control">
-            <span>结束时间</span>
-            <ElDatePicker
-              v-model="filters.endTime"
-              type="datetime"
-              placeholder="选择结束时间"
-              @change="markCustomRange"
-            />
-          </label>
-          <label class="field-control">
-            <span>级别</span>
-            <ElSelect v-model="filters.level" clearable placeholder="全部级别">
-              <ElOption v-for="option in levelOptions" :key="option.value" v-bind="option" />
-            </ElSelect>
-          </label>
-          <label class="field-control">
-            <span>组件</span>
-            <ElInput v-model="filters.component" clearable placeholder="例如 http.access" />
-          </label>
-          <label class="field-control">
-            <span>request_id</span>
-            <ElInput v-model="filters.requestId" clearable />
-          </label>
-          <label class="field-control">
-            <span>用户 ID</span>
-            <ElInputNumber v-model="filters.userId" :min="1" :controls="false" />
-          </label>
-          <label class="field-control">
-            <span>HTTP 方法</span>
-            <ElSelect v-model="filters.method" clearable placeholder="全部方法">
-              <ElOption
-                v-for="method in methodOptions"
-                :key="method"
-                :label="method"
-                :value="method"
-              />
-            </ElSelect>
-          </label>
-          <label class="field-control">
-            <span>路由</span>
-            <ElInput v-model="filters.route" clearable placeholder="例如 /api/v1/workflows" />
-          </label>
-          <label class="field-control">
-            <span>状态码</span>
-            <ElInputNumber v-model="filters.statusCode" :min="100" :max="599" :controls="false" />
-          </label>
-          <label class="field-control keyword-field">
-            <span>关键词</span>
-            <ElInput v-model="filters.keyword" clearable placeholder="消息或 request_id">
-              <template #prefix><ArtSvgIcon icon="ri:search-line" /></template>
-            </ElInput>
-          </label>
-        </div>
-
-        <div class="filter-actions">
-          <ElButton type="primary" :loading="loading" @click="searchLogs">
-            <ArtSvgIcon icon="ri:search-line" />
-            搜索
-          </ElButton>
-          <ElTooltip content="重置筛选" placement="top">
-            <ElButton circle aria-label="重置筛选" @click="resetFilters">
-              <ArtSvgIcon icon="ri:restart-line" />
+        <ArtSearchBar
+          v-model="filters"
+          :items="filterItems"
+          :show-expand="false"
+          :show-search="false"
+          @search="searchLogs"
+          @reset="resetFilters"
+        >
+          <template #actions>
+            <ElButton type="primary" :loading="loading" native-type="submit">查询</ElButton>
+            <ElButton :loading="loading" aria-label="刷新日志和写入状态" @click="refreshAll">
+              刷新
             </ElButton>
-          </ElTooltip>
-          <ElTooltip content="刷新日志和写入状态" placement="top">
-            <ElButton circle aria-label="刷新日志和写入状态" :loading="loading" @click="refreshAll">
-              <ArtSvgIcon icon="ri:refresh-line" />
-            </ElButton>
-          </ElTooltip>
-        </div>
+          </template>
+        </ArtSearchBar>
       </section>
 
       <section class="table-band">
@@ -277,6 +206,7 @@
     fetchUpdateSystemLogRuntime
   } from '@/api/system'
   import { formatDateTime } from '@/utils/date'
+  import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
 
   defineOptions({ name: 'SystemLogsPanel' })
 
@@ -431,6 +361,75 @@
     filters.timeRange = 'custom'
   }
 
+  const filterItems: SearchFormItem[] = [
+    {
+      key: 'timeRange',
+      label: '时间范围',
+      type: 'select',
+      props: { options: timeRangeOptions, onChange: changeTimeRange }
+    },
+    {
+      key: 'startTime',
+      label: '开始时间',
+      type: 'datetime',
+      props: { type: 'datetime', placeholder: '选择开始时间', onChange: markCustomRange }
+    },
+    {
+      key: 'endTime',
+      label: '结束时间',
+      type: 'datetime',
+      props: { type: 'datetime', placeholder: '选择结束时间', onChange: markCustomRange }
+    },
+    {
+      key: 'level',
+      label: '级别',
+      type: 'select',
+      props: { clearable: true, placeholder: '全部级别', options: levelOptions }
+    },
+    {
+      key: 'component',
+      label: '组件',
+      type: 'input',
+      props: { clearable: true, placeholder: '例如 http.access' }
+    },
+    { key: 'requestId', label: '请求 ID', type: 'input', props: { clearable: true } },
+    {
+      key: 'userId',
+      label: '用户 ID',
+      type: 'number',
+      props: { min: 1, precision: 0, controlsPosition: 'right' }
+    },
+    {
+      key: 'method',
+      label: 'HTTP 方法',
+      type: 'select',
+      props: {
+        clearable: true,
+        valueOnClear: '',
+        placeholder: '全部方法',
+        options: methodOptions.map((value) => ({ label: value, value }))
+      }
+    },
+    {
+      key: 'route',
+      label: '路由',
+      type: 'input',
+      props: { clearable: true, placeholder: '例如 /api/v1/workflows' }
+    },
+    {
+      key: 'statusCode',
+      label: '状态码',
+      type: 'number',
+      props: { min: 100, max: 599, precision: 0, controlsPosition: 'right' }
+    },
+    {
+      key: 'keyword',
+      label: '关键词',
+      type: 'input',
+      props: { clearable: true, placeholder: '消息或 request_id' }
+    }
+  ]
+
   const searchLogs = () => {
     if (filters.timeRange !== 'custom') changeTimeRange(filters.timeRange)
     if (filters.startTime && filters.endTime && filters.startTime > filters.endTime) {
@@ -501,7 +500,6 @@
   .console-header,
   .section-heading,
   .runtime-controls,
-  .filter-actions,
   .drawer-head,
   .title-block,
   .status-item,
@@ -663,32 +661,8 @@
     width: 100%;
   }
 
-  .filter-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-  }
-
-  .keyword-field {
-    grid-column: span 2;
-  }
-
-  .filter-actions {
-    gap: 10px;
-    margin-top: 16px;
-  }
-
-  .filter-actions > :last-child {
-    margin-left: auto;
-  }
-
-  .filter-actions :deep(.art-svg-icon),
   .runtime-actions :deep(.art-svg-icon) {
     margin-right: 5px;
-  }
-
-  .filter-actions .is-circle :deep(.art-svg-icon) {
-    margin-right: 0;
   }
 
   .table-band {
@@ -884,10 +858,6 @@
     .status-rail {
       width: 100%;
     }
-
-    .filter-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
   }
 
   @media (max-width: 768px) {
@@ -910,8 +880,7 @@
     }
 
     .runtime-controls,
-    .runtime-actions,
-    .filter-actions {
+    .runtime-actions {
       flex-direction: column;
       align-items: stretch;
     }
@@ -920,17 +889,8 @@
       width: 100%;
     }
 
-    .runtime-actions,
-    .filter-actions > :last-child {
+    .runtime-actions {
       margin-left: 0;
-    }
-
-    .filter-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .keyword-field {
-      grid-column: auto;
     }
   }
 </style>

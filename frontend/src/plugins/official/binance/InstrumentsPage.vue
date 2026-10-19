@@ -104,7 +104,7 @@
     {
       label: '状态',
       key: 'status',
-      type: 'radiogroup',
+      type: 'select',
       props: {
         options: [
           { label: '交易中', value: 'trading' },

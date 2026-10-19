@@ -1,11 +1,17 @@
 <template>
   <div class="market-chart-page">
-    <section class="filter-card art-card" aria-label="图表筛选">
-      <div class="filter-group filter-group--selector">
-        <span class="filter-label">交易标的</span>
+    <ArtSearchBar
+      v-model="chartFilters"
+      :items="filterItems"
+      :show-expand="false"
+      :show-search="false"
+      :show-reset="false"
+      aria-label="图表筛选"
+      @search="loadChart"
+    >
+      <template #instrumentId>
         <ElSelect
           v-model="selectedInstrumentId"
-          class="symbol-select"
           filterable
           placeholder="选择交易对"
           @change="loadChart"
@@ -17,44 +23,41 @@
             :value="item.id"
           />
         </ElSelect>
-      </div>
+      </template>
 
-      <div class="market-status">
-        <span
-          class="market-status__dot"
-          :class="{
-            'market-status__dot--offline': selectedSymbol?.status !== 'trading' || !streamConnected
-          }"
-        ></span>
-        <div>
-          <strong>
-            {{
-              !selectedSymbol
-                ? '未选择标的'
-                : selectedSymbol.status === 'trading'
-                  ? '交易中'
-                  : '已暂停'
-            }}
-          </strong>
-          <span>
-            {{ selectedSymbol?.market === 'usd_m' ? 'USD-M 合约' : '现货市场' }} ·
-            {{ streamConnected ? '实时行情已连接' : '实时行情重连中' }}
-          </span>
+      <template #status>
+        <div class="market-status">
+          <span
+            class="market-status__dot"
+            :class="{
+              'market-status__dot--offline':
+                selectedSymbol?.status !== 'trading' || !streamConnected
+            }"
+          ></span>
+          <div>
+            <strong>
+              {{
+                !selectedSymbol
+                  ? '未选择标的'
+                  : selectedSymbol.status === 'trading'
+                    ? '交易中'
+                    : '已暂停'
+              }}
+            </strong>
+            <span>
+              {{ selectedSymbol?.market === 'usd_m' ? 'USD-M 合约' : '现货市场' }} ·
+              {{ streamConnected ? '实时行情已连接' : '实时行情重连中' }}
+            </span>
+          </div>
         </div>
-      </div>
+      </template>
 
-      <ElTooltip content="刷新数据" placement="top">
-        <ElButton
-          class="refresh-button"
-          type="primary"
-          :icon="Refresh"
-          :loading="loading"
-          circle
-          aria-label="刷新数据"
-          @click="loadChart"
-        />
-      </ElTooltip>
-    </section>
+      <template #actions>
+        <ElButton type="primary" :icon="Refresh" :loading="loading" native-type="submit"
+          >刷新数据</ElButton
+        >
+      </template>
+    </ArtSearchBar>
 
     <section class="metric-grid" aria-label="行情摘要">
       <article class="metric-card">
@@ -277,6 +280,7 @@
   } from '@/types/component/chart'
   import { formatDateTime } from '@/utils/date'
   import { useUserStore } from '@/store/modules/user'
+  import { ArtSearchBar, type SearchFormItem } from '@/plugins/ui'
 
   defineOptions({ name: 'MarketChartPage' })
 
@@ -297,7 +301,12 @@
     '3d',
     '1w'
   ]
-  const selectedInstrumentId = ref('')
+  const chartFilters = reactive({ instrumentId: '' })
+  const selectedInstrumentId = toRef(chartFilters, 'instrumentId')
+  const filterItems: SearchFormItem[] = [
+    { key: 'instrumentId', label: '交易标的', span: 12 },
+    { key: 'status', label: '' }
+  ]
   const selectedInterval = ref<CandleInterval>('1h')
   const symbols = ref<MarketSymbol[]>([])
   const candles = ref<MarketCandle[]>([])
@@ -692,35 +701,6 @@
     margin: 0;
   }
 
-  .filter-card {
-    display: grid;
-    grid-template-columns: minmax(280px, 1fr) auto auto;
-    gap: 24px;
-    align-items: center;
-    padding: 12px 16px;
-    background: var(--default-box-color);
-  }
-
-  .filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-width: 0;
-  }
-
-  .filter-group--selector {
-    width: min(100%, 420px);
-  }
-
-  .filter-label {
-    font-size: 11px;
-    color: var(--art-gray-600);
-  }
-
-  .symbol-select {
-    width: 100%;
-  }
-
   .market-status,
   .panel-head,
   .panel-title,
@@ -733,10 +713,9 @@
 
   .market-status {
     gap: 10px;
-    min-width: 216px;
+    min-width: 0;
     min-height: 32px;
-    padding-left: 20px;
-    border-left: 1px solid var(--art-card-border);
+    line-height: 1.4;
   }
 
   .market-status__dot {
@@ -765,12 +744,6 @@
     margin-top: 3px;
     font-size: 10px;
     color: var(--art-gray-600);
-  }
-
-  .refresh-button {
-    flex: 0 0 auto;
-    width: 32px;
-    height: 32px;
   }
 
   .metric-grid {
@@ -1108,11 +1081,6 @@
   }
 
   @media (max-width: 1100px) {
-    .filter-card {
-      grid-template-columns: minmax(220px, 1fr) auto auto;
-      gap: 16px;
-    }
-
     .metric-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1129,33 +1097,6 @@
   @media (max-width: 760px) {
     .market-chart-page {
       padding: 0;
-    }
-
-    .filter-card {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: stretch;
-    }
-
-    .filter-group,
-    .filter-group--selector,
-    .symbol-select {
-      width: 100%;
-      min-width: 0;
-    }
-
-    .market-status {
-      flex: 1;
-      width: auto;
-      padding: 8px 0 0;
-      margin-left: 0;
-      border-top: 1px solid var(--art-card-border);
-      border-left: 0;
-    }
-
-    .refresh-button {
-      align-self: flex-end;
-      margin-top: 8px;
     }
 
     .chart-panel {

@@ -146,6 +146,7 @@ async function backendFixture(
     expired?: boolean
     navigation?: boolean
     ai?: boolean
+    instruments?: boolean
     conflict?: 'save' | 'publish'
     unknownResult?: boolean
   } = {}
@@ -312,6 +313,21 @@ async function backendFixture(
       pluginId: 'official.ai',
       contributionType: 'page',
       pageKey: 'models'
+    })
+  }
+  if (options.instruments) {
+    catalog[0].pages.push({ pageKey: 'instruments', title: '币种元数据', icon: 'ri:coins-line' })
+    menus.push({
+      ...menu(
+        8,
+        '/plugins/official.binance/page/instruments',
+        'plugin:official.binance/instruments',
+        '币种元数据'
+      ),
+      name: 'PluginPage:official.binance/page/instruments',
+      pluginId: 'official.binance',
+      contributionType: 'page',
+      pageKey: 'instruments'
     })
   }
   const menuTree = (parentId: number | null = null): FixtureMenu[] =>
@@ -523,6 +539,10 @@ async function backendFixture(
     }
     if (path === '/api/v1/plugins/catalog') {
       await reply({ items: catalog })
+      return
+    }
+    if (options.instruments && path === '/api/v1/plugins/official.binance/instruments') {
+      await reply({ items: [] })
       return
     }
     if (path === '/api/v1/plugins/official.binance/results/paper') {
@@ -927,6 +947,9 @@ test('插件菜单默认展示模拟交易结果并支持筛选刷新和运行�
   )
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await filtered
+  await filter.fill('')
+  await filter.press('Enter')
+  await expect(page).toHaveURL(/\/result\/paper$/)
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await page.getByRole('button', { name: '#21', exact: true }).click()
   await expect(page).toHaveURL(/execution\/21\/detail/)
@@ -934,6 +957,58 @@ test('插件菜单默认展示模拟交易结果并支持筛选刷新和运行�
   expect(backend.calls.some((c) => c.includes('workbench'))).toBe(false)
   expect(backend.unexpected).toEqual([])
 })
+
+for (const [name, path] of [
+  ['工作流', '/scheduler/definition'],
+  ['运行记录', '/scheduler/execution'],
+  ['币种', '/plugins/official.binance/page/instruments'],
+  ['模拟交易', '/plugins/official.binance/result/paper']
+])
+  test(`${name}筛选在桌面、窄容器与手机宽度保持完整布局`, async ({ page }) => {
+    const backend = await backendFixture(page, { instruments: true })
+    await page.goto(path)
+    const searchBar = page.locator('.art-search-bar')
+    await expect(searchBar.getByRole('button', { name: '查询', exact: true })).toBeVisible()
+    for (const [viewportWidth, containerWidth] of [
+      [1920, ''],
+      [1366, ''],
+      [1366, '380px'],
+      [390, '']
+    ] as const) {
+      await page.setViewportSize({ width: viewportWidth, height: 768 })
+      await searchBar.evaluate((element, value) => {
+        element.style.maxWidth = value
+      }, containerWidth)
+      await expect
+        .poll(() =>
+          searchBar.evaluate((element) => {
+            const card = element.getBoundingClientRect()
+            const controls = element.querySelectorAll<HTMLElement>(
+              '.el-form-item__label, .el-form-item__content > *, .form-buttons > .el-button'
+            )
+            return Array.from(controls).flatMap((control) => {
+              const rect = control.getBoundingClientRect()
+              if (!rect.width || !rect.height) return []
+              const overflow =
+                rect.left < card.left - 1 ||
+                rect.right > card.right + 1 ||
+                rect.top < card.top - 1 ||
+                rect.bottom > card.bottom + 1
+              const wrappedLabel =
+                control.classList.contains('el-form-item__label') && rect.height > 34
+              return overflow || wrappedLabel
+                ? [control.textContent?.trim() || control.className]
+                : []
+            })
+          })
+        )
+        .toEqual([])
+      if (containerWidth || viewportWidth === 390) {
+        await expect(searchBar.locator('.el-col').first()).toHaveClass(/el-col-24/)
+      }
+    }
+    expect(backend.unexpected).toEqual([])
+  })
 
 test('量化菜单直接查询并复用回测分析', async ({ page }) => {
   const backend = await backendFixture(page, { quant: true })
@@ -1283,8 +1358,13 @@ test('运行中心恢复 URL 筛选并显示名称与修订摘要', async ({ pag
 
 test('人工待办保留全部状态筛选，运行详情只读取本次待办', async ({ page }) => {
   const backend = await backendFixture(page)
-  await page.goto('/scheduler/tasks?status=&runId=21')
+  await page.goto('/scheduler/tasks?runId=21')
   await expect(page.getByText('审核合成业务事项')).toBeVisible()
+  const status = page.locator('.art-search-bar .el-select')
+  await status.hover()
+  await status.locator('.el-select__clear').click()
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(page).toHaveURL(/status=(&|$)/)
   await expect(page.getByRole('combobox', { name: '待办状态', exact: true })).toHaveValue('')
   await page.reload()
   await expect(page.getByText('审核合成业务事项')).toBeVisible()

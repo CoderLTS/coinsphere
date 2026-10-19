@@ -1,4 +1,5 @@
 export { default as ArtSearchBar } from '@/components/core/forms/art-search-bar/index.vue'
+export type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
 export { default as ArtTable } from '@/components/core/tables/art-table/index.vue'
 export { default as ArtTableHeader } from '@/components/core/tables/art-table-header/index.vue'
 export { default as WorkflowSchemaFields } from '@/components/workflow/WorkflowSchemaFields.vue'
